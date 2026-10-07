@@ -1,0 +1,43 @@
+@inherits LayoutComponentBase
+@inject LocalizationService L
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="app-shell">
+    <header class="app-header">
+        <div class="app-header-inner">
+            <span class="app-brand">Smart<strong>Agenda</strong></span>
+            <div class="idioma-toggle" role="group" aria-label="Idioma / Language">
+                <button type="button" class="@(L.Actual == Idioma.Es ? "activo" : "")" @onclick='() => CambiarIdioma(Idioma.Es)'>ES</button>
+                <button type="button" class="@(L.Actual == Idioma.En ? "activo" : "")" @onclick='() => CambiarIdioma(Idioma.En)'>EN</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-main">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            L.OnCambio += AlCambiarIdioma;
+            await L.InicializarAsync(JS);
+        }
+    }
+
+    private async Task CambiarIdioma(Idioma idioma) => await L.EstablecerAsync(JS, idioma);
+
+    private void AlCambiarIdioma() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => L.OnCambio -= AlCambiarIdioma;
+}

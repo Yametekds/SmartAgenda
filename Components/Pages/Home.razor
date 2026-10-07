@@ -1,0 +1,877 @@
+@page "/"
+@implements IAsyncDisposable
+@using System.Globalization
+@inject TareaStorageService Storage
+@inject ParserLenguajeNaturalService Parser
+@inject GoogleCalendarService GoogleCalendar
+@inject LocalizationService L
+@inject IJSRuntime JS
+
+<PageTitle>Smart Agenda</PageTitle>
+
+<header class="hero">
+    <h1>@L.T("hero.tituloPrefijo") <span class="accent">@L.T("hero.tituloAcento")</span></h1>
+    <p class="hero-sub">@L.T("hero.subtitulo")</p>
+</header>
+
+<section class="card entrada-card">
+    <div class="entrada-caja">
+        <textarea class="form-control" rows="2" @bind="textoEntrada" @bind:event="oninput"
+                  placeholder="@L.T("entrada.placeholder")"></textarea>
+        @if (vozSoportada)
+        {
+            <button class="btn-mic @(grabando ? "grabando" : "")" type="button" disabled="@transcribiendo"
+                    title="@(grabando ? L.T("mic.detener") : L.T("mic.iniciar"))" @onclick="AlternarGrabacion">
+                @if (transcribiendo)
+                {
+                    <text>⏳</text>
+                }
+                else
+                {
+                    @(grabando ? "⏺" : "🎤")
+                }
+            </button>
+        }
+    </div>
+
+    @if (permisoMicrofonoBloqueado)
+    {
+        <p class="aviso aviso-ambar">@L.T("aviso.permisoBloqueado")</p>
+    }
+
+    <button class="btn btn-primary mt-3" @onclick="ProcesarEntrada" disabled="@(string.IsNullOrWhiteSpace(textoEntrada) || procesando)">
+        @(procesando ? L.T("boton.analizando") : L.T("boton.revisarEventos"))
+    </button>
+
+    @if (grabando)
+    {
+        <p class="aviso aviso-neutro">@L.T("aviso.grabando")</p>
+    }
+    @if (transcribiendo)
+    {
+        <p class="aviso aviso-neutro">@L.T("aviso.transcribiendo")</p>
+    }
+    @if (!string.IsNullOrEmpty(mensajeEstado))
+    {
+        <p class="aviso aviso-info">@mensajeEstado</p>
+    }
+</section>
+
+@if (eventosPendientes.Count > 0)
+{
+    <section class="card vista-previa">
+        <h2 class="card-titulo">
+            @(eventosPendientes.Count == 1 ? L.T("previa.singular") : L.T("previa.plural", eventosPendientes.Count))
+            @if (eventosPendientes.Any(e => e.EsAmbiguo))
+            {
+                <span class="aviso-ambiguo">@L.T("previa.avisoAmbiguo")</span>
+            }
+        </h2>
+        <ul class="lista-previa">
+            @foreach (var ev in eventosPendientes)
+            {
+                <li class="@(ev.EsAmbiguo ? "ambiguo" : "")">
+                    <div class="fila-campos">
+                        <input class="form-control form-control-sm campo-titulo" @bind="ev.Texto" placeholder="@L.T("campo.titulo")" />
+                        <input type="date" class="form-control form-control-sm campo-fecha"
+                               value="@ev.Fecha.ToString("yyyy-MM-dd")"
+                               @onchange="e => { ev.Fecha = DateOnly.Parse((string)e.Value!); ev.EsAmbiguo = false; ev.MotivoAmbiguedad = null; }" />
+                        <input type="time" class="form-control form-control-sm campo-hora" @bind="ev.Hora" />
+                        <input type="number" min="0" class="form-control form-control-sm campo-duracion" title="@L.T("edicion.duracionTitle")"
+                               value="@((int)(ev.Duracion?.TotalMinutes ?? 0))"
+                               @onchange="e => ev.Duracion = int.TryParse((string?)e.Value, out var min) && min > 0 ? TimeSpan.FromMinutes(min) : null" />
+                        <button class="btn-icono btn-icono-quitar" title="@L.T("previa.quitarTitle")" @onclick="() => eventosPendientes.Remove(ev)">✕</button>
+                    </div>
+                    @if (ev.EsAmbiguo)
+                    {
+                        <div class="texto-ambiguo">⚠ @ev.MotivoAmbiguedad</div>
+                    }
+                </li>
+            }
+        </ul>
+        <div class="acciones">
+            <button class="btn btn-primary" @onclick="ConfirmarEventosPendientes" disabled="@confirmando">
+                @(confirmando ? L.T("boton.creando") : L.T("boton.confirmarCrear", eventosPendientes.Count))
+            </button>
+            <button class="btn btn-fantasma" @onclick="CancelarEventosPendientes">@L.T("boton.cancelar")</button>
+        </div>
+    </section>
+}
+
+<section class="card estado-google">
+    @if (!GoogleCalendar.EstaConfigurado)
+    {
+        <p class="aviso aviso-ambar">@L.T("google.noConfigurado")</p>
+    }
+    else if (!GoogleCalendar.EstaConectado)
+    {
+        <div class="fila-google">
+            <span>@L.T("google.noConectado")</span>
+            <button class="btn btn-primary btn-compacto" @onclick="ConectarGoogle" disabled="@conectando">
+                @(conectando ? L.T("boton.conectando") : L.T("boton.conectarGoogle"))
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="fila-google">
+            <span class="estado-ok">@L.T("google.conectado")</span>
+            <div class="acciones-google">
+                <button class="btn btn-fantasma btn-compacto" @onclick="SincronizarDesdeGoogle" disabled="@sincronizandoDesdeGoogle">
+                    @(sincronizandoDesdeGoogle ? L.T("boton.importando") : L.T("boton.importarGoogle"))
+                </button>
+                <button class="btn btn-fantasma btn-compacto" @onclick="DesconectarGoogle">@L.T("boton.desconectar")</button>
+            </div>
+        </div>
+    }
+</section>
+
+<nav class="semana-nav">
+    <button class="btn-icono" title="@L.T("semana.anteriorTitle")" @onclick="SemanaAnterior">‹</button>
+
+    <div class="semana-titulo">
+        @if (editandoNombreSemana)
+        {
+            <input class="form-control form-control-sm nombre-semana-input" @bind="nombreSemanaEdit" @bind:event="oninput"
+                   @onblur="GuardarNombreSemana" @onkeydown="OnKeyDownNombreSemana" />
+        }
+        else
+        {
+            <span class="nombre-semana" title="@L.T("semana.renombrarTitle")" @onclick="EmpezarEdicionNombreSemana">
+                @(nombreSemana ?? L.T("semana.nombrePorDefecto"))
+            </span>
+        }
+        <span class="rango-semana">
+            @semanaActual.ToString("dd MMM", CultureInfo.GetCultureInfo(L.CodigoCultura)) – @semanaActual.AddDays(6).ToString("dd MMM", CultureInfo.GetCultureInfo(L.CodigoCultura))
+        </span>
+    </div>
+
+    <button class="btn-icono" title="@L.T("semana.siguienteTitle")" @onclick="SemanaSiguiente">›</button>
+
+    @if (semanaActual != LunesDeHoy())
+    {
+        <button class="btn-fantasma btn-compacto btn-hoy" @onclick="IrASemanaActual">@L.T("boton.hoy")</button>
+    }
+</nav>
+
+<div class="semana-grid">
+    @foreach (var fecha in DiasSemana)
+    {
+        <div class="dia-card @(fecha == DateOnly.FromDateTime(DateTime.Now) ? "dia-hoy" : "")">
+            <div class="dia-card-cabecera">
+                <span class="dia-nombre">@NombreDia(fecha.DayOfWeek)</span>
+                <span class="dia-fecha">@fecha.ToString("dd/MM")</span>
+            </div>
+            @if (semana.TryGetValue(fecha, out var tareas) && tareas.Count > 0)
+            {
+                <ul class="lista-tareas">
+                    @foreach (var tarea in tareas.OrderBy(t => t.Hora ?? TimeOnly.MaxValue))
+                    {
+                        <li class="@(tarea.Completada ? "completada" : "")">
+                            @if (tareaEnEdicionId == tarea.Id)
+                            {
+                                <div class="tarea-edicion">
+                                    <input class="form-control form-control-sm mb-1" @bind="edTexto" placeholder="@L.T("edicion.descripcionPlaceholder")" />
+                                    <div class="fila-edicion">
+                                        <select class="form-select form-select-sm" value="@edFecha.ToString("yyyy-MM-dd")"
+                                                @onchange="e => edFecha = DateOnly.Parse((string)e.Value!)">
+                                            @foreach (var f in DiasSemana)
+                                            {
+                                                <option value="@f.ToString("yyyy-MM-dd")">@NombreDia(f.DayOfWeek) @f.ToString("dd/MM")</option>
+                                            }
+                                        </select>
+                                        <input type="time" class="form-control form-control-sm" @bind="edHora" />
+                                        <input type="number" min="0" class="form-control form-control-sm campo-duracion" @bind="edDuracionMinutos" title="@L.T("edicion.duracionTitle")" />
+                                    </div>
+                                    <div class="acciones">
+                                        <button class="btn btn-primary btn-compacto" @onclick="() => GuardarEdicion(fecha)">@L.T("boton.guardar")</button>
+                                        <button class="btn btn-fantasma btn-compacto" @onclick="CancelarEdicion">@L.T("boton.cancelar")</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="tarea-linea">
+                                    <input type="checkbox" class="tarea-check" checked="@tarea.Completada"
+                                           @onchange="e => AlternarCompletada(fecha, tarea, e.Value)" />
+                                    <span class="tarea-texto">
+                                        @if (tarea.Hora is { } h)
+                                        {
+                                            <strong>@h.ToString("HH:mm")</strong>
+                                            <text> </text>
+                                        }
+                                        @tarea.Texto
+                                        @if (!string.IsNullOrEmpty(tarea.GoogleEventId))
+                                        {
+                                            <span class="insignia-google" title="@L.T("tarea.insigniaGoogleTitle")">G</span>
+                                        }
+                                    </span>
+                                </div>
+                                <div class="tarea-acciones">
+                                    <button class="btn-icono" title="@L.T("tarea.editarTitle")" @onclick="() => EmpezarEdicion(fecha, tarea)">✎</button>
+                                    @if (GoogleCalendar.EstaConectado)
+                                    {
+                                        <button class="btn-icono @(tarea.GoogleEventId is null ? "" : "sincronizado")"
+                                                title="@(tarea.GoogleEventId is null ? L.T("tarea.enviarGoogleTitle") : L.T("tarea.actualizarGoogleTitle"))"
+                                                @onclick="() => SincronizarTarea(fecha, tarea)">☁</button>
+                                    }
+                                    <button class="btn-icono btn-icono-quitar" title="@L.T("tarea.eliminarTitle")" @onclick="() => EliminarTarea(fecha, tarea)">🗑</button>
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="sin-tareas">@L.T("dia.sinTareas")</p>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .hero { margin-bottom: 1.5rem; }
+    .hero h1 { font-size: 2rem; margin-bottom: 0.2rem; color: var(--color-text); }
+    .hero h1 .accent { color: var(--color-accent); }
+    .hero-sub { color: var(--color-text-muted); margin: 0; font-size: 0.95rem; }
+
+    .card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .card-titulo { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--color-text); }
+
+    .entrada-caja { display: flex; align-items: flex-start; gap: 0.6rem; max-width: 640px; }
+    .entrada-caja textarea { flex: 1; }
+
+    .btn-mic {
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+        font-size: 1.25rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .btn-mic.grabando { background: var(--color-primary); color: white; border-color: var(--color-primary); animation: pulso 1.2s infinite; }
+    @@keyframes pulso {
+        0% { box-shadow: 0 0 0 0 rgba(228,7,18,0.5); }
+        70% { box-shadow: 0 0 0 10px rgba(228,7,18,0); }
+        100% { box-shadow: 0 0 0 0 rgba(228,7,18,0); }
+    }
+
+    .aviso { border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-size: 0.85rem; margin: 0.6rem 0 0; }
+    .aviso-ambar { background: var(--color-warning-bg); color: var(--color-accent); }
+    .aviso-neutro { background: var(--color-surface-raised); color: var(--color-text-muted); }
+    .aviso-info { background: var(--color-surface-raised); color: var(--color-text); }
+
+    .btn-fantasma {
+        background: transparent;
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+        border-radius: var(--radius-sm);
+        font-size: 0.85rem;
+        padding: 0.5rem 1rem;
+    }
+    .btn-fantasma:hover { border-color: var(--color-accent); color: var(--color-accent); }
+    .btn-compacto { padding: 0.35rem 0.8rem; font-size: 0.8rem; }
+
+    .vista-previa { background: var(--color-warning-bg); border-color: #4a3f24; }
+    .aviso-ambiguo { color: var(--color-accent); font-weight: 600; font-size: 0.8rem; margin-left: 0.5rem; }
+    .lista-previa { list-style: none; padding: 0; margin: 0 0 0.9rem 0; }
+    .lista-previa li { background: var(--color-surface); border-radius: var(--radius-md); padding: 0.6rem; margin-bottom: 0.5rem; border: 1px solid transparent; }
+    .lista-previa li.ambiguo { border-color: var(--color-accent); }
+    .texto-ambiguo { color: var(--color-accent); font-size: 0.78rem; margin-top: 0.4rem; }
+    .fila-campos { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+    .campo-titulo { flex: 2; min-width: 160px; }
+    .campo-fecha { flex: 1; min-width: 140px; }
+    .campo-hora { flex: 1; min-width: 100px; }
+    .campo-duracion { max-width: 70px; }
+
+    .fila-google { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: space-between; }
+    .acciones-google { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .estado-ok { color: var(--color-success); font-weight: 600; font-size: 0.9rem; }
+
+    .semana-nav {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+        flex-wrap: wrap;
+    }
+    .semana-titulo { display: flex; flex-direction: column; align-items: center; min-width: 180px; }
+    .nombre-semana { cursor: pointer; font-weight: 700; font-size: 1.05rem; color: var(--color-text); border-bottom: 1px dashed var(--color-text-muted); }
+    .nombre-semana:hover { color: var(--color-accent); }
+    .nombre-semana-input { width: 160px; text-align: center; }
+    .rango-semana { color: var(--color-text-muted); font-size: 0.8rem; text-transform: capitalize; }
+    .btn-hoy { margin-left: 0.25rem; }
+
+    .btn-icono {
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .btn-icono:hover { border-color: var(--color-accent); color: var(--color-accent); }
+    .btn-icono.sincronizado { color: var(--color-success); border-color: var(--color-success); }
+    .btn-icono-quitar:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+    .semana-grid { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .dia-card {
+        flex: 1 1 190px;
+        min-width: 190px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 0.9rem;
+    }
+    .dia-card.dia-hoy { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+    .dia-card-cabecera { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding-bottom: 0.5rem; margin-bottom: 0.6rem; }
+    .dia-nombre { font-weight: 700; font-size: 1rem; color: var(--color-text); text-transform: capitalize; }
+    .dia-fecha { font-size: 0.78rem; color: var(--color-text-muted); }
+
+    .lista-tareas { list-style: none; padding: 0; margin: 0; }
+    .lista-tareas li {
+        background: var(--color-surface-raised);
+        border-radius: var(--radius-md);
+        padding: 0.55rem 0.65rem;
+        margin-bottom: 0.5rem;
+    }
+    .lista-tareas li.completada .tarea-texto { text-decoration: line-through; opacity: 0.5; }
+    .tarea-linea { display: flex; align-items: flex-start; gap: 0.5rem; }
+    .tarea-check { margin-top: 0.2rem; accent-color: var(--color-primary); }
+    .tarea-texto { font-size: 0.88rem; color: var(--color-text); }
+    .tarea-texto strong { margin-right: 0.35em; }
+    .tarea-acciones { display: flex; gap: 0.35rem; margin-top: 0.5rem; }
+    .sin-tareas { color: var(--color-text-muted); font-size: 0.85rem; margin: 0; }
+    .insignia-google {
+        display: inline-block;
+        margin-left: 0.3rem;
+        font-size: 0.55rem;
+        font-weight: bold;
+        color: #12181c;
+        background: var(--color-accent);
+        border-radius: 50%;
+        width: 14px;
+        height: 14px;
+        line-height: 14px;
+        text-align: center;
+    }
+    .tarea-edicion input, .tarea-edicion select { font-size: 0.8rem; }
+    .fila-edicion { display: flex; gap: 0.4rem; margin: 0.4rem 0; }
+
+    @@media (max-width: 480px) {
+        .hero h1 { font-size: 1.5rem; }
+        .semana-grid { gap: 0.6rem; }
+        .dia-card { flex-basis: 100%; }
+        .btn-icono { width: 38px; height: 38px; font-size: 1.1rem; }
+        .fila-edicion { flex-direction: column; }
+        .tarea-edicion select, .tarea-edicion input[type="time"], .tarea-edicion input[type="number"] {
+            width: 100%;
+            max-width: none !important;
+        }
+        .fila-campos input { width: 100% !important; max-width: none !important; }
+        .fila-google { flex-direction: column; align-items: stretch; }
+    }
+</style>
+
+@code {
+    private string textoEntrada = string.Empty;
+    private string? mensajeEstado;
+    private bool conectando;
+    private bool sincronizandoDesdeGoogle;
+    private bool procesando;
+    private bool confirmando;
+
+    private bool vozSoportada;
+    private bool grabando;
+    private bool transcribiendo;
+    private bool permisoMicrofonoBloqueado;
+    private DotNetObjectReference<Home>? _dotNetRef;
+
+    private List<EventoPropuesto> eventosPendientes = new();
+
+    private DateOnly semanaActual;
+    private string? nombreSemana;
+    private bool editandoNombreSemana;
+    private string nombreSemanaEdit = string.Empty;
+
+    private Dictionary<DateOnly, List<TareaItem>> semana = new();
+
+    private Guid? tareaEnEdicionId;
+    private string edTexto = string.Empty;
+    private DateOnly edFecha;
+    private TimeOnly? edHora;
+    private int edDuracionMinutos;
+
+    private IEnumerable<DateOnly> DiasSemana => Enumerable.Range(0, 7).Select(i => semanaActual.AddDays(i));
+
+    protected override async Task OnInitializedAsync()
+    {
+        L.OnCambio += AlCambiarIdioma;
+        semanaActual = LunesDeHoy();
+        await CargarSemanaAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            vozSoportada = await JS.InvokeAsync<bool>("smartAgendaSpeech.soportado");
+
+            if (vozSoportada)
+            {
+                // Pide el permiso de micrófono ya, en vez de esperar a que el usuario pulse el botón.
+                var estado = await JS.InvokeAsync<string>("smartAgendaSpeech.comprobarPermiso");
+                permisoMicrofonoBloqueado = estado == "denied";
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    private void AlCambiarIdioma() => InvokeAsync(StateHasChanged);
+
+    private async Task CargarSemanaAsync()
+    {
+        semana = await Storage.ObtenerSemanaAsync(semanaActual);
+        nombreSemana = await Storage.ObtenerNombreSemanaAsync(semanaActual);
+    }
+
+    private static DateOnly LunesDeHoy() => LunesDe(DateOnly.FromDateTime(DateTime.Now));
+
+    private static DateOnly LunesDe(DateOnly fecha)
+    {
+        var diferencia = ((int)fecha.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        return fecha.AddDays(-diferencia);
+    }
+
+    private async Task SemanaAnterior()
+    {
+        semanaActual = semanaActual.AddDays(-7);
+        await CargarSemanaAsync();
+    }
+
+    private async Task SemanaSiguiente()
+    {
+        semanaActual = semanaActual.AddDays(7);
+        await CargarSemanaAsync();
+    }
+
+    private async Task IrASemanaActual()
+    {
+        semanaActual = LunesDeHoy();
+        await CargarSemanaAsync();
+    }
+
+    private void EmpezarEdicionNombreSemana()
+    {
+        nombreSemanaEdit = nombreSemana ?? "";
+        editandoNombreSemana = true;
+    }
+
+    private async Task GuardarNombreSemana()
+    {
+        if (!editandoNombreSemana) return;
+        await Storage.GuardarNombreSemanaAsync(semanaActual, nombreSemanaEdit);
+        nombreSemana = string.IsNullOrWhiteSpace(nombreSemanaEdit) ? null : nombreSemanaEdit.Trim();
+        editandoNombreSemana = false;
+    }
+
+    private async Task OnKeyDownNombreSemana(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await GuardarNombreSemana();
+        }
+        else if (e.Key == "Escape")
+        {
+            editandoNombreSemana = false;
+        }
+    }
+
+    private string NombreDia(DayOfWeek dia)
+    {
+        var nombre = CultureInfo.GetCultureInfo(L.CodigoCultura).DateTimeFormat.GetDayName(dia);
+        return nombre.Length == 0 ? nombre : char.ToUpper(nombre[0], CultureInfo.CurrentCulture) + nombre[1..];
+    }
+
+    /// <summary>Interpreta el texto (escrito o transcrito de audio) y muestra la vista previa; no guarda nada todavía.</summary>
+    private void ProcesarEntrada()
+    {
+        if (string.IsNullOrWhiteSpace(textoEntrada)) return;
+
+        procesando = true;
+        try
+        {
+            var eventos = Parser.ParsearMultiple(textoEntrada, L.Actual, semanaInicio: semanaActual);
+            if (eventos.Count == 0)
+            {
+                mensajeEstado = L.T("mensaje.sinEventos");
+                return;
+            }
+
+            eventosPendientes = eventos;
+            mensajeEstado = null;
+            textoEntrada = string.Empty;
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    private void CancelarEventosPendientes()
+    {
+        eventosPendientes.Clear();
+    }
+
+    /// <summary>Guarda localmente y sincroniza con Google Calendar cada evento ya revisado por el usuario.</summary>
+    private async Task ConfirmarEventosPendientes()
+    {
+        if (eventosPendientes.Count == 0) return;
+
+        confirmando = true;
+        try
+        {
+            var creadas = 0;
+            var sincronizadas = 0;
+            DateOnly? primeraFecha = null;
+
+            foreach (var ev in eventosPendientes.ToList())
+            {
+                var tarea = new TareaItem
+                {
+                    Texto = ev.Texto,
+                    Hora = ev.Hora,
+                    Duracion = ev.Duracion,
+                    Fecha = ev.Fecha
+                };
+
+                await Storage.AgregarTareaAsync(ev.Fecha, tarea);
+                creadas++;
+                primeraFecha ??= ev.Fecha;
+
+                if (GoogleCalendar.EstaConectado)
+                {
+                    try
+                    {
+                        tarea.GoogleEventId = await GoogleCalendar.CrearOActualizarEventoAsync(tarea, ev.Fecha);
+                        await Storage.ActualizarTareaAsync(ev.Fecha, tarea);
+                        sincronizadas++;
+                    }
+                    catch
+                    {
+                        // Se avisa en el resumen final; no se interrumpe la creación del resto.
+                    }
+                }
+            }
+
+            eventosPendientes.Clear();
+
+            if (primeraFecha is { } f && (f < semanaActual || f > semanaActual.AddDays(6)))
+            {
+                semanaActual = LunesDe(f);
+            }
+            await CargarSemanaAsync();
+
+            mensajeEstado = GoogleCalendar.EstaConectado
+                ? L.T("mensaje.eventosCreadosConGoogle", creadas, sincronizadas)
+                : L.T("mensaje.eventosCreadosSinGoogle", creadas);
+        }
+        finally
+        {
+            confirmando = false;
+        }
+    }
+
+    private async Task AlternarGrabacion()
+    {
+        if (grabando)
+        {
+            await JS.InvokeVoidAsync("smartAgendaSpeech.detener");
+        }
+        else
+        {
+            grabando = true;
+            permisoMicrofonoBloqueado = false;
+            await JS.InvokeVoidAsync("smartAgendaSpeech.iniciar", _dotNetRef, L.CodigoWhisper);
+        }
+    }
+
+    /// <summary>La grabación terminó y el audio se está subiendo/transcribiendo en el servidor.</summary>
+    [JSInvokable]
+    public void OnTranscribiendo()
+    {
+        grabando = false;
+        transcribiendo = true;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnTranscripcion(string texto)
+    {
+        textoEntrada = string.IsNullOrWhiteSpace(textoEntrada) ? texto : $"{textoEntrada} {texto}";
+        grabando = false;
+        transcribiendo = false;
+        permisoMicrofonoBloqueado = false;
+
+        // Venido por voz: pasa directo a la vista previa, sin esperar a que pulsen "Revisar eventos".
+        ProcesarEntrada();
+
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnErrorReconocimiento(string error)
+    {
+        grabando = false;
+        transcribiendo = false;
+        mensajeEstado = error switch
+        {
+            "not-allowed" => null, // se muestra como aviso persistente, no como mensaje suelto
+            "sin-audio" => L.T("error.sinAudio"),
+            "sin-voz" => L.T("error.sinVoz"),
+            "error-servidor" => L.T("error.servidor"),
+            "red" => L.T("error.red"),
+            _ => L.T("error.generico", error)
+        };
+
+        if (error == "not-allowed")
+        {
+            permisoMicrofonoBloqueado = true;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task AlternarCompletada(DateOnly fecha, TareaItem tarea, object? valor)
+    {
+        tarea.Completada = valor is bool b && b;
+        await Storage.ActualizarTareaAsync(fecha, tarea);
+    }
+
+    private async Task EliminarTarea(DateOnly fecha, TareaItem tarea)
+    {
+        if (!string.IsNullOrEmpty(tarea.GoogleEventId) && GoogleCalendar.EstaConectado)
+        {
+            try { await GoogleCalendar.EliminarEventoAsync(tarea.GoogleEventId); }
+            catch { /* si falla la sincronización, igual se borra localmente */ }
+        }
+        await Storage.EliminarTareaAsync(fecha, tarea.Id);
+        semana[fecha] = await Storage.ObtenerTareasAsync(fecha);
+    }
+
+    private async Task SincronizarTarea(DateOnly fecha, TareaItem tarea)
+    {
+        try
+        {
+            var eventId = await GoogleCalendar.CrearOActualizarEventoAsync(tarea, fecha);
+            tarea.GoogleEventId = eventId;
+            await Storage.ActualizarTareaAsync(fecha, tarea);
+            mensajeEstado = L.T("mensaje.tareaSincronizada", tarea.Texto);
+        }
+        catch (Exception ex)
+        {
+            mensajeEstado = L.T("mensaje.errorSincronizar", ex.Message);
+        }
+    }
+
+    private void EmpezarEdicion(DateOnly fecha, TareaItem tarea)
+    {
+        tareaEnEdicionId = tarea.Id;
+        edTexto = tarea.Texto;
+        edFecha = fecha;
+        edHora = tarea.Hora;
+        edDuracionMinutos = (int)(tarea.Duracion?.TotalMinutes ?? 0);
+    }
+
+    private void CancelarEdicion()
+    {
+        tareaEnEdicionId = null;
+    }
+
+    private async Task GuardarEdicion(DateOnly fechaOriginal)
+    {
+        if (tareaEnEdicionId is not { } id) return;
+
+        var tarea = semana.TryGetValue(fechaOriginal, out var lista)
+            ? lista.FirstOrDefault(t => t.Id == id)
+            : null;
+        if (tarea is null) return;
+
+        tarea.Texto = string.IsNullOrWhiteSpace(edTexto) ? tarea.Texto : edTexto.Trim();
+        tarea.Hora = edHora;
+        tarea.Duracion = edDuracionMinutos > 0 ? TimeSpan.FromMinutes(edDuracionMinutos) : null;
+        tarea.Fecha = edFecha;
+
+        if (edFecha != fechaOriginal)
+        {
+            await Storage.EliminarTareaAsync(fechaOriginal, tarea.Id);
+            await Storage.AgregarTareaAsync(edFecha, tarea);
+        }
+        else
+        {
+            await Storage.ActualizarTareaAsync(fechaOriginal, tarea);
+        }
+
+        if (GoogleCalendar.EstaConectado)
+        {
+            try
+            {
+                tarea.GoogleEventId = await GoogleCalendar.CrearOActualizarEventoAsync(tarea, tarea.Fecha);
+                await Storage.ActualizarTareaAsync(edFecha, tarea);
+            }
+            catch (Exception ex)
+            {
+                mensajeEstado = L.T("mensaje.tareaActualizadaErrorGoogle", ex.Message);
+            }
+        }
+
+        await CargarSemanaAsync();
+        tareaEnEdicionId = null;
+    }
+
+    private async Task ConectarGoogle()
+    {
+        conectando = true;
+        try
+        {
+            await GoogleCalendar.ConectarAsync();
+            mensajeEstado = L.T("mensaje.conectadoGoogle");
+        }
+        catch (Exception ex)
+        {
+            mensajeEstado = L.T("mensaje.errorConectarGoogle", ex.Message);
+        }
+        finally
+        {
+            conectando = false;
+        }
+    }
+
+    private void DesconectarGoogle()
+    {
+        GoogleCalendar.Desconectar();
+        mensajeEstado = L.T("mensaje.desconectadoGoogle");
+    }
+
+    private async Task SincronizarDesdeGoogle()
+    {
+        sincronizandoDesdeGoogle = true;
+        try
+        {
+            var eventos = await GoogleCalendar.ObtenerEventosSemanaAsync(semanaActual);
+
+            var tareasPorEventId = semana
+                .SelectMany(kv => kv.Value.Select(t => (Fecha: kv.Key, Tarea: t)))
+                .Where(x => !string.IsNullOrEmpty(x.Tarea.GoogleEventId))
+                .ToDictionary(x => x.Tarea.GoogleEventId!, x => x);
+
+            int nuevas = 0, actualizadas = 0;
+
+            foreach (var evento in eventos)
+            {
+                if (string.IsNullOrEmpty(evento.Id)) continue;
+
+                DateOnly fecha;
+                TimeOnly? hora;
+                if (evento.Start?.DateTimeDateTimeOffset is { } inicio)
+                {
+                    fecha = DateOnly.FromDateTime(inicio.DateTime);
+                    hora = TimeOnly.FromDateTime(inicio.DateTime);
+                }
+                else if (!string.IsNullOrEmpty(evento.Start?.Date) && DateOnly.TryParse(evento.Start.Date, out var fechaSolo))
+                {
+                    fecha = fechaSolo;
+                    hora = null;
+                }
+                else
+                {
+                    continue;
+                }
+
+                var texto = string.IsNullOrWhiteSpace(evento.Summary) ? "(Sin título)" : evento.Summary;
+                TimeSpan? duracion = null;
+                if (evento.Start?.DateTimeDateTimeOffset is { } ini && evento.End?.DateTimeDateTimeOffset is { } fin)
+                {
+                    duracion = fin - ini;
+                }
+
+                if (tareasPorEventId.TryGetValue(evento.Id, out var existente))
+                {
+                    var tarea = existente.Tarea;
+                    tarea.Texto = texto;
+                    tarea.Hora = hora;
+                    tarea.Duracion = duracion;
+                    tarea.Fecha = fecha;
+
+                    if (existente.Fecha != fecha)
+                    {
+                        await Storage.EliminarTareaAsync(existente.Fecha, tarea.Id);
+                        await Storage.AgregarTareaAsync(fecha, tarea);
+                    }
+                    else
+                    {
+                        await Storage.ActualizarTareaAsync(fecha, tarea);
+                    }
+                    actualizadas++;
+                }
+                else
+                {
+                    var nueva = new TareaItem
+                    {
+                        Texto = texto,
+                        Hora = hora,
+                        Duracion = duracion,
+                        Fecha = fecha,
+                        GoogleEventId = evento.Id
+                    };
+                    await Storage.AgregarTareaAsync(fecha, nueva);
+                    nuevas++;
+                }
+            }
+
+            await CargarSemanaAsync();
+            mensajeEstado = L.T("mensaje.importacionCompleta", nuevas, actualizadas);
+        }
+        catch (Exception ex)
+        {
+            mensajeEstado = L.T("mensaje.errorImportarGoogle", ex.Message);
+        }
+        finally
+        {
+            sincronizandoDesdeGoogle = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        L.OnCambio -= AlCambiarIdioma;
+
+        if (_dotNetRef is not null)
+        {
+            try { await JS.InvokeVoidAsync("smartAgendaSpeech.detener"); } catch { /* el circuito puede ya estar cerrado */ }
+            _dotNetRef.Dispose();
+        }
+    }
+}

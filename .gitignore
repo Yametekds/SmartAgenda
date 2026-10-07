@@ -1,0 +1,12 @@
+bin/
+obj/
+Data/credentials.json
+Data/google-token/
+Data/tareas/
+Data/modelo-voz/
+Data/semanas.json
+Data/dev-cert.pfx
+Data/dev-cert.cer
+Data/dev-cert.pwd
+Data/tailscale-cert.crt
+Data/tailscale-cert.key
