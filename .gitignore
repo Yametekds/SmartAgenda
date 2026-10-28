@@ -10,3 +10,5 @@ Data/dev-cert.cer
 Data/dev-cert.pwd
 Data/tailscale-cert.crt
 Data/tailscale-cert.key
+tests/**/bin/
+tests/**/obj/
