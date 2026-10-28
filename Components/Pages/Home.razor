@@ -6,6 +6,7 @@
 @inject GoogleCalendarService GoogleCalendar
 @inject LocalizationService L
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <PageTitle>Smart Agenda</PageTitle>
 
@@ -62,7 +63,7 @@
     <section class="card vista-previa">
         <h2 class="card-titulo">
             @(eventosPendientes.Count == 1 ? L.T("previa.singular") : L.T("previa.plural", eventosPendientes.Count))
-            @if (eventosPendientes.Any(e => e.EsAmbiguo))
+            @if (eventosPendientes.Any(e => e.EsAmbiguo || e.AvisoHora is not null))
             {
                 <span class="aviso-ambiguo">@L.T("previa.avisoAmbiguo")</span>
             }
@@ -70,13 +71,13 @@
         <ul class="lista-previa">
             @foreach (var ev in eventosPendientes)
             {
-                <li class="@(ev.EsAmbiguo ? "ambiguo" : "")">
+                <li class="@(ev.EsAmbiguo || ev.AvisoHora is not null ? "ambiguo" : "")">
                     <div class="fila-campos">
                         <input class="form-control form-control-sm campo-titulo" @bind="ev.Texto" placeholder="@L.T("campo.titulo")" />
                         <input type="date" class="form-control form-control-sm campo-fecha"
                                value="@ev.Fecha.ToString("yyyy-MM-dd")"
                                @onchange="e => { ev.Fecha = DateOnly.Parse((string)e.Value!); ev.EsAmbiguo = false; ev.MotivoAmbiguedad = null; }" />
-                        <input type="time" class="form-control form-control-sm campo-hora" @bind="ev.Hora" />
+                        <input type="time" class="form-control form-control-sm campo-hora" @bind="ev.Hora" @bind:after="() => ev.AvisoHora = null" />
                         <input type="number" min="0" class="form-control form-control-sm campo-duracion" title="@L.T("edicion.duracionTitle")"
                                value="@((int)(ev.Duracion?.TotalMinutes ?? 0))"
                                @onchange="e => ev.Duracion = int.TryParse((string?)e.Value, out var min) && min > 0 ? TimeSpan.FromMinutes(min) : null" />
@@ -85,6 +86,10 @@
                     @if (ev.EsAmbiguo)
                     {
                         <div class="texto-ambiguo">⚠ @ev.MotivoAmbiguedad</div>
+                    }
+                    @if (ev.AvisoHora is not null)
+                    {
+                        <div class="texto-ambiguo">⚠ @ev.AvisoHora</div>
                     }
                 </li>
             }
@@ -173,13 +178,7 @@
                                 <div class="tarea-edicion">
                                     <input class="form-control form-control-sm mb-1" @bind="edTexto" placeholder="@L.T("edicion.descripcionPlaceholder")" />
                                     <div class="fila-edicion">
-                                        <select class="form-select form-select-sm" value="@edFecha.ToString("yyyy-MM-dd")"
-                                                @onchange="e => edFecha = DateOnly.Parse((string)e.Value!)">
-                                            @foreach (var f in DiasSemana)
-                                            {
-                                                <option value="@f.ToString("yyyy-MM-dd")">@NombreDia(f.DayOfWeek) @f.ToString("dd/MM")</option>
-                                            }
-                                        </select>
+                                        <input type="date" class="form-control form-control-sm" @bind="edFecha" />
                                         <input type="time" class="form-control form-control-sm" @bind="edHora" />
                                         <input type="number" min="0" class="form-control form-control-sm campo-duracion" @bind="edDuracionMinutos" title="@L.T("edicion.duracionTitle")" />
                                     </div>
@@ -215,7 +214,15 @@
                                                 title="@(tarea.GoogleEventId is null ? L.T("tarea.enviarGoogleTitle") : L.T("tarea.actualizarGoogleTitle"))"
                                                 @onclick="() => SincronizarTarea(fecha, tarea)">☁</button>
                                     }
-                                    <button class="btn-icono btn-icono-quitar" title="@L.T("tarea.eliminarTitle")" @onclick="() => EliminarTarea(fecha, tarea)">🗑</button>
+                                    @if (tareaABorrarId == tarea.Id)
+                                    {
+                                        <button class="btn-fantasma btn-compacto btn-confirmar-borrado" @onclick="() => EliminarTarea(fecha, tarea)">@L.T("tarea.confirmarEliminar")</button>
+                                        <button class="btn-fantasma btn-compacto" @onclick="() => tareaABorrarId = null">@L.T("boton.cancelar")</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn-icono btn-icono-quitar" title="@L.T("tarea.eliminarTitle")" aria-label="@L.T("tarea.eliminarTitle")" @onclick="() => tareaABorrarId = tarea.Id">🗑</button>
+                                    }
                                 </div>
                             }
                         </li>
@@ -333,6 +340,7 @@
     .btn-icono:hover { border-color: var(--color-accent); color: var(--color-accent); }
     .btn-icono.sincronizado { color: var(--color-success); border-color: var(--color-success); }
     .btn-icono-quitar:hover { border-color: var(--color-primary); color: var(--color-primary); }
+    .btn-confirmar-borrado { border-color: var(--color-primary); color: var(--color-primary); }
 
     .semana-grid { display: flex; gap: 1rem; flex-wrap: wrap; }
     .dia-card {
@@ -417,6 +425,7 @@
     private Dictionary<DateOnly, List<TareaItem>> semana = new();
 
     private Guid? tareaEnEdicionId;
+    private Guid? tareaABorrarId;
     private string edTexto = string.Empty;
     private DateOnly edFecha;
     private TimeOnly? edHora;
@@ -427,6 +436,14 @@
     protected override async Task OnInitializedAsync()
     {
         L.OnCambio += AlCambiarIdioma;
+
+        // Vuelta del inicio de sesión de Google (ver /google/callback en Program.cs).
+        var consulta = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        if (consulta.TryGetValue("google", out var resultadoGoogle))
+        {
+            mensajeEstado = resultadoGoogle == "ok" ? L.T("mensaje.conectadoGoogle") : L.T("mensaje.errorConectarGoogleRedireccion");
+        }
+
         semanaActual = LunesDeHoy();
         await CargarSemanaAsync();
     }
@@ -435,6 +452,12 @@
     {
         if (firstRender)
         {
+            // Quita el "?google=..." de la dirección para que el aviso no reaparezca al recargar.
+            if (Navigation.Uri.Contains("google="))
+            {
+                Navigation.NavigateTo("/", replace: true);
+            }
+
             _dotNetRef = DotNetObjectReference.Create(this);
             vozSoportada = await JS.InvokeAsync<bool>("smartAgendaSpeech.soportado");
 
@@ -555,6 +578,7 @@
         {
             var creadas = 0;
             var sincronizadas = 0;
+            var sinSincronizar = new List<string>();
             DateOnly? primeraFecha = null;
 
             foreach (var ev in eventosPendientes.ToList())
@@ -581,7 +605,9 @@
                     }
                     catch
                     {
-                        // Se avisa en el resumen final; no se interrumpe la creación del resto.
+                        // Se avisa en el resumen final; no se interrumpe la creación del resto. La
+                        // tarea queda guardada en local y se puede reenviar con su botón ☁.
+                        sinSincronizar.Add(tarea.Texto);
                     }
                 }
             }
@@ -597,6 +623,10 @@
             mensajeEstado = GoogleCalendar.EstaConectado
                 ? L.T("mensaje.eventosCreadosConGoogle", creadas, sincronizadas)
                 : L.T("mensaje.eventosCreadosSinGoogle", creadas);
+            if (sinSincronizar.Count > 0)
+            {
+                mensajeEstado += " " + L.T("mensaje.eventosSinSincronizar", string.Join(", ", sinSincronizar));
+            }
         }
         finally
         {
@@ -679,6 +709,7 @@
         }
         await Storage.EliminarTareaAsync(fecha, tarea.Id);
         semana[fecha] = await Storage.ObtenerTareasAsync(fecha);
+        tareaABorrarId = null;
     }
 
     private async Task SincronizarTarea(DateOnly fecha, TareaItem tarea)
@@ -724,15 +755,7 @@
         tarea.Duracion = edDuracionMinutos > 0 ? TimeSpan.FromMinutes(edDuracionMinutos) : null;
         tarea.Fecha = edFecha;
 
-        if (edFecha != fechaOriginal)
-        {
-            await Storage.EliminarTareaAsync(fechaOriginal, tarea.Id);
-            await Storage.AgregarTareaAsync(edFecha, tarea);
-        }
-        else
-        {
-            await Storage.ActualizarTareaAsync(fechaOriginal, tarea);
-        }
+        await Storage.MoverTareaAsync(fechaOriginal, tarea);
 
         if (GoogleCalendar.EstaConectado)
         {
@@ -751,27 +774,17 @@
         tareaEnEdicionId = null;
     }
 
-    private async Task ConectarGoogle()
+    private void ConectarGoogle()
     {
+        // El inicio de sesión de Google se hace en este mismo navegador (móvil o PC): se sale de la
+        // app a la página de Google y se vuelve a /google/callback, que deja el token guardado.
         conectando = true;
-        try
-        {
-            await GoogleCalendar.ConectarAsync();
-            mensajeEstado = L.T("mensaje.conectadoGoogle");
-        }
-        catch (Exception ex)
-        {
-            mensajeEstado = L.T("mensaje.errorConectarGoogle", ex.Message);
-        }
-        finally
-        {
-            conectando = false;
-        }
+        Navigation.NavigateTo(GoogleCalendarService.RutaConectar, forceLoad: true);
     }
 
-    private void DesconectarGoogle()
+    private async Task DesconectarGoogle()
     {
-        GoogleCalendar.Desconectar();
+        await GoogleCalendar.DesconectarAsync();
         mensajeEstado = L.T("mensaje.desconectadoGoogle");
     }
 
@@ -785,74 +798,47 @@
             var tareasPorEventId = semana
                 .SelectMany(kv => kv.Value.Select(t => (Fecha: kv.Key, Tarea: t)))
                 .Where(x => !string.IsNullOrEmpty(x.Tarea.GoogleEventId))
-                .ToDictionary(x => x.Tarea.GoogleEventId!, x => x);
+                .GroupBy(x => x.Tarea.GoogleEventId!)
+                .ToDictionary(g => g.Key, g => g.First());
 
-            int nuevas = 0, actualizadas = 0;
+            int nuevas = 0, actualizadas = 0, eliminadas = 0;
+            var vistos = new HashSet<string>();
 
             foreach (var evento in eventos)
             {
                 if (string.IsNullOrEmpty(evento.Id)) continue;
+                vistos.Add(evento.Id);
 
-                DateOnly fecha;
-                TimeOnly? hora;
-                if (evento.Start?.DateTimeDateTimeOffset is { } inicio)
+                tareasPorEventId.TryGetValue(evento.Id, out var existente);
+                switch (await AplicarEventoDeGoogleAsync(evento, existente.Tarea is null ? null : existente))
                 {
-                    fecha = DateOnly.FromDateTime(inicio.DateTime);
-                    hora = TimeOnly.FromDateTime(inicio.DateTime);
+                    case ResultadoImportacion.Nueva: nuevas++; break;
+                    case ResultadoImportacion.Actualizada: actualizadas++; break;
+                    case ResultadoImportacion.Eliminada: eliminadas++; break;
                 }
-                else if (!string.IsNullOrEmpty(evento.Start?.Date) && DateOnly.TryParse(evento.Start.Date, out var fechaSolo))
+            }
+
+            // Tareas de esta semana que estaban en Google y ya no aparecen en ella: o se borraron
+            // hace tiempo, o se movieron a otra semana. Se pregunta por cada una para distinguirlo.
+            foreach (var (eventId, existente) in tareasPorEventId.Where(kv => !vistos.Contains(kv.Key)))
+            {
+                var evento = await GoogleCalendar.ObtenerEventoAsync(eventId);
+                if (evento is null)
                 {
-                    fecha = fechaSolo;
-                    hora = null;
-                }
-                else
-                {
+                    await Storage.EliminarTareaAsync(existente.Fecha, existente.Tarea.Id);
+                    eliminadas++;
                     continue;
                 }
 
-                var texto = string.IsNullOrWhiteSpace(evento.Summary) ? "(Sin título)" : evento.Summary;
-                TimeSpan? duracion = null;
-                if (evento.Start?.DateTimeDateTimeOffset is { } ini && evento.End?.DateTimeDateTimeOffset is { } fin)
+                switch (await AplicarEventoDeGoogleAsync(evento, existente))
                 {
-                    duracion = fin - ini;
-                }
-
-                if (tareasPorEventId.TryGetValue(evento.Id, out var existente))
-                {
-                    var tarea = existente.Tarea;
-                    tarea.Texto = texto;
-                    tarea.Hora = hora;
-                    tarea.Duracion = duracion;
-                    tarea.Fecha = fecha;
-
-                    if (existente.Fecha != fecha)
-                    {
-                        await Storage.EliminarTareaAsync(existente.Fecha, tarea.Id);
-                        await Storage.AgregarTareaAsync(fecha, tarea);
-                    }
-                    else
-                    {
-                        await Storage.ActualizarTareaAsync(fecha, tarea);
-                    }
-                    actualizadas++;
-                }
-                else
-                {
-                    var nueva = new TareaItem
-                    {
-                        Texto = texto,
-                        Hora = hora,
-                        Duracion = duracion,
-                        Fecha = fecha,
-                        GoogleEventId = evento.Id
-                    };
-                    await Storage.AgregarTareaAsync(fecha, nueva);
-                    nuevas++;
+                    case ResultadoImportacion.Actualizada: actualizadas++; break;
+                    case ResultadoImportacion.Eliminada: eliminadas++; break;
                 }
             }
 
             await CargarSemanaAsync();
-            mensajeEstado = L.T("mensaje.importacionCompleta", nuevas, actualizadas);
+            mensajeEstado = L.T("mensaje.importacionCompleta", nuevas, actualizadas, eliminadas);
         }
         catch (Exception ex)
         {
@@ -862,6 +848,66 @@
         {
             sincronizandoDesdeGoogle = false;
         }
+    }
+
+    private enum ResultadoImportacion { Ninguno, Nueva, Actualizada, Eliminada }
+
+    /// <summary>Lleva un evento de Google a la tarea local que le corresponde (o crea una nueva).</summary>
+    private async Task<ResultadoImportacion> AplicarEventoDeGoogleAsync(Google.Apis.Calendar.v3.Data.Event evento, (DateOnly Fecha, TareaItem Tarea)? existente)
+    {
+        if (evento.Status == "cancelled")
+        {
+            if (existente is not { } borrada) return ResultadoImportacion.Ninguno;
+            await Storage.EliminarTareaAsync(borrada.Fecha, borrada.Tarea.Id);
+            return ResultadoImportacion.Eliminada;
+        }
+
+        DateOnly fecha;
+        TimeOnly? hora;
+        if (evento.Start?.DateTimeDateTimeOffset is { } inicio)
+        {
+            // Pasado a la hora local de este equipo: un evento creado en otra zona horaria debe
+            // verse a la hora a la que ocurre aquí, no a la de su zona de origen.
+            fecha = DateOnly.FromDateTime(inicio.LocalDateTime);
+            hora = TimeOnly.FromDateTime(inicio.LocalDateTime);
+        }
+        else if (!string.IsNullOrEmpty(evento.Start?.Date) && DateOnly.TryParse(evento.Start.Date, out var fechaSolo))
+        {
+            fecha = fechaSolo;
+            hora = null;
+        }
+        else
+        {
+            return ResultadoImportacion.Ninguno;
+        }
+
+        var texto = string.IsNullOrWhiteSpace(evento.Summary) ? L.T("tarea.sinTitulo") : evento.Summary;
+        TimeSpan? duracion = null;
+        if (evento.Start?.DateTimeDateTimeOffset is { } ini && evento.End?.DateTimeDateTimeOffset is { } fin)
+        {
+            duracion = fin - ini;
+        }
+
+        if (existente is { } conocida)
+        {
+            var tarea = conocida.Tarea;
+            tarea.Texto = texto;
+            tarea.Hora = hora;
+            tarea.Duracion = duracion;
+            tarea.Fecha = fecha;
+            await Storage.MoverTareaAsync(conocida.Fecha, tarea);
+            return ResultadoImportacion.Actualizada;
+        }
+
+        await Storage.AgregarTareaAsync(fecha, new TareaItem
+        {
+            Texto = texto,
+            Hora = hora,
+            Duracion = duracion,
+            Fecha = fecha,
+            GoogleEventId = evento.Id
+        });
+        return ResultadoImportacion.Nueva;
     }
 
     public async ValueTask DisposeAsync()
