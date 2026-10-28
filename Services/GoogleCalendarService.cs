@@ -1,4 +1,5 @@
 using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
@@ -9,17 +10,27 @@ namespace SmartAgenda.Services;
 
 public class GoogleCalendarService
 {
+    public const string RutaConectar = "/google/conectar";
+    public const string RutaCallback = "/google/callback";
+
+    // Clave con la que se guarda el token en Data/google-token/. Es la misma que usaba la versión
+    // anterior (GoogleWebAuthorizationBroker), así que un token ya guardado sigue sirviendo.
+    private const string UsuarioToken = "usuario-local";
+
     private readonly string _credencialesPath;
     private readonly string _tokenStorePath;
+    private readonly ILogger<GoogleCalendarService> _logger;
+    private GoogleAuthorizationCodeFlow? _flujo;
     private CalendarService? _servicio;
 
-    public GoogleCalendarService(IWebHostEnvironment env, IConfiguration config)
+    public GoogleCalendarService(IWebHostEnvironment env, IConfiguration config, ILogger<GoogleCalendarService> logger)
     {
         var dataDir = Path.Combine(env.ContentRootPath, "Data");
         Directory.CreateDirectory(dataDir);
         _credencialesPath = config["GoogleCalendar:CredentialsPath"]
             ?? Path.Combine(dataDir, "credentials.json");
         _tokenStorePath = Path.Combine(dataDir, "google-token");
+        _logger = logger;
     }
 
     /// <summary>Hay un credentials.json propio del proyecto (requisito técnico de Google, se crea una sola vez).</summary>
@@ -29,24 +40,58 @@ public class GoogleCalendarService
     public bool EstaConectado => _servicio != null || Directory.Exists(_tokenStorePath) && Directory.EnumerateFiles(_tokenStorePath).Any();
 
     /// <summary>
-    /// Dispara el inicio de sesión explícito con Google (botón "Conectar con Google").
-    /// Si ya hay un token válido guardado, no vuelve a pedir nada.
+    /// URL del inicio de sesión de Google. El navegador del usuario (el del móvil o el del PC, el que
+    /// esté usando la app) va ahí y Google le devuelve a <paramref name="redirectUri"/> con un código.
+    /// Antes se abría un navegador en el servidor, que desde el móvil nunca llegaba a verse.
     /// </summary>
-    public async Task ConectarAsync() => await ObtenerServicioAsync();
+    public string CrearUrlAutorizacion(string redirectUri, string state)
+    {
+        var url = ObtenerFlujo().CreateAuthorizationCodeRequest(redirectUri);
+        url.State = state;
+        return url.Build().AbsoluteUri;
+    }
 
-    /// <summary>Olvida la sesión guardada localmente. No afecta a los permisos en la cuenta de Google del usuario.</summary>
-    public void Desconectar()
+    /// <summary>Canjea el código que devuelve Google por un token y lo guarda en Data/google-token/.</summary>
+    public async Task CompletarAutorizacionAsync(string codigo, string redirectUri, CancellationToken ct)
+    {
+        await ObtenerFlujo().ExchangeCodeForTokenAsync(UsuarioToken, codigo, redirectUri, ct);
+        _servicio = null;
+    }
+
+    /// <summary>
+    /// Olvida la sesión guardada localmente y, si se puede, revoca el permiso en Google para que el
+    /// token no siga siendo válido aunque alguien tuviera una copia.
+    /// </summary>
+    public async Task DesconectarAsync()
     {
         _servicio = null;
+
+        if (EstaConfigurado)
+        {
+            try
+            {
+                var flujo = ObtenerFlujo();
+                var token = await flujo.LoadTokenAsync(UsuarioToken, CancellationToken.None);
+                if (token is not null)
+                {
+                    await flujo.RevokeTokenAsync(UsuarioToken, token.RefreshToken ?? token.AccessToken, CancellationToken.None);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo revocar el token de Google; se borra solo la copia local.");
+            }
+        }
+
         if (Directory.Exists(_tokenStorePath))
         {
             Directory.Delete(_tokenStorePath, recursive: true);
         }
     }
 
-    private async Task<CalendarService> ObtenerServicioAsync()
+    private GoogleAuthorizationCodeFlow ObtenerFlujo()
     {
-        if (_servicio != null) return _servicio;
+        if (_flujo != null) return _flujo;
 
         if (!EstaConfigurado)
         {
@@ -55,21 +100,31 @@ public class GoogleCalendarService
                 "Sigue las instrucciones del README para crear tu proyecto OAuth en Google Cloud Console (solo hay que hacerlo una vez).");
         }
 
-        UserCredential credencial;
-        await using (var stream = new FileStream(_credencialesPath, FileMode.Open, FileAccess.Read))
+        using var stream = new FileStream(_credencialesPath, FileMode.Open, FileAccess.Read);
+        _flujo = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
         {
-            credencial = await GoogleWebAuthorizationBroker.AuthorizeAsync(
-                GoogleClientSecrets.FromStream(stream).Secrets,
-                new[] { CalendarService.Scope.Calendar },
-                "usuario-local",
-                CancellationToken.None,
-                new FileDataStore(_tokenStorePath, true));
-        }
+            ClientSecrets = GoogleClientSecrets.FromStream(stream).Secrets,
+            Scopes = new[] { CalendarService.Scope.Calendar },
+            DataStore = new FileDataStore(_tokenStorePath, true),
+            // "consent" garantiza que Google entregue un refresh token aunque ya se hubiera dado
+            // permiso antes; sin él, la conexión caducaría a la hora.
+            Prompt = "consent"
+        });
+        return _flujo;
+    }
+
+    private async Task<CalendarService> ObtenerServicioAsync()
+    {
+        if (_servicio != null) return _servicio;
+
+        var flujo = ObtenerFlujo();
+        var token = await flujo.LoadTokenAsync(UsuarioToken, CancellationToken.None)
+            ?? throw new InvalidOperationException("Google Calendar no está conectado. Pulsa \"Conectar con Google\".");
 
         _servicio = new CalendarService(new BaseClientService.Initializer
         {
-            HttpClientInitializer = credencial,
-            ApplicationName = "Tareas Semanales"
+            HttpClientInitializer = new UserCredential(flujo, UsuarioToken, token),
+            ApplicationName = "Smart Agenda"
         });
 
         return _servicio;
@@ -148,9 +203,25 @@ public class GoogleCalendarService
         solicitud.TimeMinDateTimeOffset = lunes.ToDateTime(TimeOnly.MinValue);
         solicitud.TimeMaxDateTimeOffset = lunes.AddDays(7).ToDateTime(TimeOnly.MinValue);
         solicitud.SingleEvents = true;
-        solicitud.OrderBy = EventsResource.ListRequest.OrderByEnum.StartTime;
+        // Incluye los eventos borrados en Google (Status = "cancelled") para poder borrarlos también aquí.
+        solicitud.ShowDeleted = true;
+        solicitud.MaxResults = 2500;
 
         var resultado = await solicitud.ExecuteAsync();
         return resultado.Items?.ToList() ?? new List<Event>();
+    }
+
+    /// <summary>Un evento concreto por su id, o null si ya no existe en el calendario.</summary>
+    public async Task<Event?> ObtenerEventoAsync(string googleEventId)
+    {
+        var servicio = await ObtenerServicioAsync();
+        try
+        {
+            return await servicio.Events.Get("primary", googleEventId).ExecuteAsync();
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
+        {
+            return null;
+        }
     }
 }
