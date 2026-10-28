@@ -12,3 +12,5 @@ Data/tailscale-cert.crt
 Data/tailscale-cert.key
 tests/**/bin/
 tests/**/obj/
+Data/acceso.pwd
+Data/claves-proteccion/
