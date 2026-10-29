@@ -13,7 +13,9 @@ namespace SmartAgenda.Services;
 /// </summary>
 public class LocalizationService
 {
-    private const string ClaveLocalStorage = "ts_idioma";
+    private const string ClaveLocalStorage = "smartagenda_idioma";
+    // Clave de cuando la app se llamaba "TareasSemanales": se sigue leyendo para no perder la preferencia guardada.
+    private const string ClaveLocalStorageAntigua = "ts_idioma";
 
     public Idioma Actual { get; private set; } = Idioma.Es;
 
@@ -24,12 +26,14 @@ public class LocalizationService
     {
         try
         {
-            var guardado = await js.InvokeAsync<string?>("localStorage.getItem", ClaveLocalStorage);
+            var guardado = await js.InvokeAsync<string?>("localStorage.getItem", ClaveLocalStorage)
+                ?? await js.InvokeAsync<string?>("localStorage.getItem", ClaveLocalStorageAntigua);
             if (guardado == "en")
             {
                 Actual = Idioma.En;
                 OnCambio?.Invoke();
             }
+            await ActualizarLangDocumentoAsync(js);
         }
         catch
         {
@@ -44,6 +48,7 @@ public class LocalizationService
         try
         {
             await js.InvokeVoidAsync("localStorage.setItem", ClaveLocalStorage, idioma == Idioma.En ? "en" : "es");
+            await ActualizarLangDocumentoAsync(js);
         }
         catch
         {
@@ -51,6 +56,13 @@ public class LocalizationService
         }
         OnCambio?.Invoke();
     }
+
+    /// <summary>
+    /// Mantiene &lt;html lang&gt; al día: lo usan los lectores de pantalla para elegir la voz y el
+    /// navegador para ofrecer traducir la página.
+    /// </summary>
+    private Task ActualizarLangDocumentoAsync(IJSRuntime js) =>
+        js.InvokeVoidAsync("document.documentElement.setAttribute", "lang", CodigoWhisper).AsTask();
 
     public string CodigoWhisper => Actual == Idioma.En ? "en" : "es";
 
@@ -129,6 +141,8 @@ public class LocalizationService
         ["tarea.enviarGoogleTitle"] = ("Enviar a Google Calendar", "Send to Google Calendar"),
         ["tarea.actualizarGoogleTitle"] = ("Actualizar en Google Calendar", "Update in Google Calendar"),
         ["tarea.eliminarTitle"] = ("Eliminar", "Delete"),
+        ["tarea.confirmarEliminar"] = ("¿Eliminar?", "Delete?"),
+        ["tarea.sinTitulo"] = ("(Sin título)", "(Untitled)"),
         ["tarea.insigniaGoogleTitle"] = ("Sincronizada con Google Calendar", "Synced with Google Calendar"),
 
         ["edicion.descripcionPlaceholder"] = ("Descripción", "Description"),
@@ -142,6 +156,9 @@ public class LocalizationService
             "Se crearon {0} evento(s), {1} sincronizado(s) con Google Calendar.",
             "Created {0} event(s), {1} synced with Google Calendar."),
         ["mensaje.eventosCreadosSinGoogle"] = ("Se crearon {0} evento(s).", "Created {0} event(s)."),
+        ["mensaje.eventosSinSincronizar"] = (
+            "No se pudieron enviar a Google: {0}. Están guardados aquí; usa su botón ☁ para reintentarlo.",
+            "Couldn't send to Google: {0}. They're saved here; use their ☁ button to try again."),
         ["mensaje.tareaSincronizada"] = (
             "'{0}' sincronizada con Google Calendar.",
             "'{0}' synced with Google Calendar."),
@@ -153,12 +170,15 @@ public class LocalizationService
         ["mensaje.errorConectarGoogle"] = (
             "No se pudo conectar con Google: {0}",
             "Couldn't connect with Google: {0}"),
+        ["mensaje.errorConectarGoogleRedireccion"] = (
+            "No se pudo completar la conexión con Google. Si Google mostró \"redirect_uri_mismatch\", añade la dirección de esta app a tus credenciales (ver README).",
+            "Couldn't finish connecting to Google. If Google showed \"redirect_uri_mismatch\", add this app's address to your credentials (see README)."),
         ["mensaje.desconectadoGoogle"] = (
             "Se cerró la sesión de Google en esta app.",
             "Signed out of Google in this app."),
         ["mensaje.importacionCompleta"] = (
-            "Importación completa: {0} tarea(s) nueva(s), {1} actualizada(s).",
-            "Import complete: {0} new task(s), {1} updated."),
+            "Importación completa: {0} tarea(s) nueva(s), {1} actualizada(s), {2} eliminada(s) porque ya no están en Google.",
+            "Import complete: {0} new task(s), {1} updated, {2} removed because they're no longer in Google."),
         ["mensaje.errorImportarGoogle"] = (
             "Error al importar desde Google: {0}",
             "Error importing from Google: {0}"),

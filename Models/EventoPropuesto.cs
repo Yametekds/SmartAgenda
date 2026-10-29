@@ -16,4 +16,10 @@ public class EventoPropuesto
     /// de la entrada (p. ej. un número suelto sin mes ni día de la semana que lo respalde).
     /// </summary>
     public bool PermiteSupresionSiUnico { get; set; } = true;
+
+    /// <summary>
+    /// Aviso sobre la hora, independiente de la ambigüedad de la fecha: p. ej. "a las 7" sin am/pm,
+    /// que se interpreta como las 19:00. Nunca se suprime, aunque el evento sea el único de la entrada.
+    /// </summary>
+    public string? AvisoHora { get; set; }
 }
