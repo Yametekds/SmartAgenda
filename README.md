@@ -126,6 +126,12 @@ dotnet run --project "C#/SmartAgenda"
 
 Open the URL the console prints (by default `http://localhost:5203`).
 
+To run the tests (natural-language parser and storage):
+
+```bash
+dotnet test SmartAgenda.sln
+```
+
 ### Natural language examples
 
 ```
@@ -144,7 +150,12 @@ The parser understands, in both languages:
   `in 3 days`/`dentro de 3 días`.
 - Explicit dates: `october 2nd`, `the first`, `the 4th` — once a month is
   mentioned, later dates in the same sentence inherit it automatically.
-- Times as digits or words: `at 10`, `10am`, `at seven in the morning`.
+- Times as digits or words: `at 10`, `10am`, `at seven in the morning`,
+  `at half past seven`, `at quarter to 8`, `a las 7 y media`, `a las 9
+  menos cuarto`. A time from 1 to 7 with no am/pm (`at 7`) is taken as the
+  afternoon/evening (19:00) and flagged in the preview so you can check it.
+- Dates that already passed this year (`January 5th` said in December) go
+  to next year.
 - Duration with `for 1 hour`, `for 30 minutes` (defaults to 1 hour).
 - Several events separated by commas/"and" — each one is detected
   separately, unless the piece after the separator has no date/time of its
@@ -178,6 +189,18 @@ pointing Tailscale at it.
 **Tailscale is the recommended way to reach it**, whatever machine it ends
 up running on: it avoids installing certificates by hand and works from
 outside your home network too.
+
+### Access password
+
+From any device other than the computer running the app (your phone, another
+PC on the Wi-Fi, another device on your tailnet), the app asks for a
+password once per device. The first time the app starts it creates a random
+one, prints it in the console and saves it in `Data/acceso.pwd`; to change
+it, edit that file (or set the `Acceso__Contrasena` environment variable)
+and restart the app. On the computer itself (`localhost`) no password is
+asked; set `Acceso__PermitirLocalSinContrasena=false` to require it there
+too (for example, if you put the app behind a reverse proxy on the same
+machine).
 
 ### Option A: Tailscale (recommended)
 
@@ -282,8 +305,17 @@ Cloud (free, for personal use only).
 
 1. Go to **APIs & Services → Credentials → Create credentials → OAuth
    client ID**.
-2. Application type: **Desktop app**.
-3. Name it and create it. Download the generated JSON.
+2. Application type: **Web application**.
+3. Under **Authorized redirect URIs**, add the address you use to open the
+   app followed by `/google/callback`, one per address you use. For example:
+   - `https://my-server.your-tailnet.ts.net:7094/google/callback` (Tailscale)
+   - `http://localhost:5203/google/callback` (on the computer itself)
+4. Create it and download the generated JSON.
+
+> Already had a **Desktop app** credential from an earlier version? Your
+> saved connection keeps working. You only need the Web application
+> credential the next time you click "Connect with Google", because Google
+> only sends a Desktop credential back to `localhost`.
 
 ### 4. Place the file in the project
 
@@ -298,12 +330,13 @@ if it doesn't exist yet).
 
 ### 5. Connect your account (inside the app, once)
 
-Click **"Connect with Google"** in the app. A browser window opens with
-Google's official sign-in (that's how any "Sign in with Google" flow works
-— for security, Google doesn't allow it inside another application). Sign
-in, grant calendar access, and the window closes itself. The permission is
-stored locally in `Data/google-token/`, so **you won't need to sign in
-again** — the app remembers the connection between runs.
+Click **"Connect with Google"** in the app, from your phone or your
+computer. The same browser goes to Google's official sign-in; sign in,
+grant calendar access, and you're sent back to the app. If Google shows
+`redirect_uri_mismatch`, the address you're using isn't in the credential's
+redirect URIs (step 3). The permission is stored locally in
+`Data/google-token/`, so **you won't need to sign in again**. "Disconnect"
+deletes it and also revokes the permission in your Google account.
 
 From then on, daily use is: write or dictate the task → click "Review
 events" → confirm the preview → it's saved in the app and created as an
@@ -313,12 +346,13 @@ event in your Google Calendar, no extra technical steps.
 
 - **Edit**: every task has an "Edit" button to change its text, day, time
   or duration. If it's connected to Google, the event is updated too.
-- **Delete**: removes the task locally and, if it was synced, the Google
-  Calendar event too.
+- **Delete**: asks for confirmation, then removes the task locally and, if
+  it was synced, the Google Calendar event too.
 - **Import tasks from Google**: pulls in events already on your Google
   Calendar for the current week (e.g. ones created directly from your phone
-  or Google's own web UI). Known events are updated, new ones are added as
-  tasks.
+  or Google's own web UI). Known events are updated (and moved if they
+  changed day), new ones are added as tasks, and tasks whose event was
+  deleted in Google are removed here too.
 
 > `Data/credentials.json` and `Data/google-token/` contain sensitive
 > account information: never share them or commit them to a public
@@ -336,8 +370,10 @@ event in your Google Calendar, no extra technical steps.
   single source of truth for the currently selected language.
 - `Services/TareaStorageService.cs` — reads/writes tasks as JSON, one file
   per exact date, plus each week's custom name.
-- `Services/GoogleCalendarService.cs` — OAuth2 authentication and event
-  sync with Google Calendar.
+- `Services/GoogleCalendarService.cs` — OAuth2 authentication (browser
+  redirect to `/google/callback`) and event sync with Google Calendar.
+- `Services/AccesoService.cs` — access password for other devices and its
+  sign-in page (`/acceso`).
 - `Services/DeteccionVozService.cs` — pre-filter that discards audio
   without real speech (music, noise, silence) using Silero VAD, before
   calling Whisper.
@@ -355,6 +391,8 @@ event in your Google Calendar, no extra technical steps.
   `localhost`) with that certificate.
 - `wwwroot/manifest.webmanifest` + `wwwroot/service-worker.js` — make the
   app installable as a PWA ("Add to Home screen" on mobile).
+- `tests/SmartAgenda.Tests/` — xUnit tests for the parser (Spanish and
+  English) and for storage; GitHub Actions runs them on every push.
 
 ## License
 

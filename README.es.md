@@ -131,6 +131,12 @@ dotnet run --project "C#/SmartAgenda"
 
 Abre la URL que indique la consola (por defecto `http://localhost:5203`).
 
+Para pasar los tests (parser de lenguaje natural y almacenamiento):
+
+```bash
+dotnet test SmartAgenda.sln
+```
+
 ### Ejemplos de lenguaje natural
 
 ```
@@ -151,7 +157,11 @@ El analizador reconoce, en ambos idiomas:
   mes una vez, las fechas siguientes en la misma frase lo heredan
   automáticamente.
 - Horas en número o en palabras: `a las 10`, `10am`, `a las siete de la
-  mañana`.
+  mañana`, `a las 7 y media`, `a las 9 menos cuarto`, `at half past seven`,
+  `at quarter to 8`. Una hora de 1 a 7 sin am/pm (`a las 7`) se toma como
+  de la tarde (19:00) y se marca en la vista previa para que la revises.
+- Las fechas que ya pasaron este año (`el 5 de enero` dicho en diciembre)
+  van al año siguiente.
 - Duración con `durante 1 hora`, `durante 30 minutos` (por defecto, 1 hora).
 - Varios eventos separados por comas o "y"/"and": cada uno se detecta por
   separado, salvo que el trozo tras el separador no tenga ninguna
@@ -187,6 +197,17 @@ publicar la app allí y apuntar Tailscale hacia ella.
 **Tailscale es la forma recomendada de acceder**, sea cual sea la máquina
 donde termine corriendo: evita instalar certificados a mano y funciona
 también fuera de casa.
+
+### Contraseña de acceso
+
+Desde cualquier dispositivo que no sea el equipo donde corre la app (tu
+móvil, otro PC de la Wi-Fi, otro dispositivo de tu tailnet), la app pide una
+contraseña, una sola vez por dispositivo. La primera vez que arranca crea
+una aleatoria, la muestra en la consola y la guarda en `Data/acceso.pwd`;
+para cambiarla, edita ese archivo (o usa la variable de entorno
+`Acceso__Contrasena`) y reinicia la app. En el propio equipo (`localhost`)
+no se pide; con `Acceso__PermitirLocalSinContrasena=false` se pide también
+ahí (por ejemplo, si pones la app detrás de un proxy en la misma máquina).
 
 ### Opción A: Tailscale (recomendada)
 
@@ -297,8 +318,19 @@ propias de Google Cloud (gratis, solo para tu uso personal).
 
 1. Ve a **APIs y servicios → Credenciales → Crear credenciales → ID de
    cliente de OAuth**.
-2. Tipo de aplicación: **Aplicación de escritorio**.
-3. Dale un nombre y créala. Descarga el JSON generado.
+2. Tipo de aplicación: **Aplicación web**.
+3. En **URIs de redireccionamiento autorizados**, añade la dirección con la
+   que abres la app seguida de `/google/callback`, una por cada dirección
+   que uses. Por ejemplo:
+   - `https://mi-servidor.tu-tailnet.ts.net:7094/google/callback` (Tailscale)
+   - `http://localhost:5203/google/callback` (en el propio equipo)
+4. Créala y descarga el JSON generado.
+
+> ¿Ya tenías una credencial de **Aplicación de escritorio** de una versión
+> anterior? La conexión ya guardada sigue funcionando. Solo necesitas la
+> credencial de Aplicación web la próxima vez que pulses "Conectar con
+> Google", porque Google solo devuelve a `localhost` con una credencial de
+> escritorio.
 
 ### 4. Colocar el archivo en el proyecto
 
@@ -313,13 +345,14 @@ vez si no existe).
 
 ### 5. Conectar tu cuenta (dentro de la app, una sola vez)
 
-En la propia app, pulsa el botón **"Conectar con Google"**. Se abrirá una
-ventana de tu navegador con el inicio de sesión oficial de Google (así
-funciona cualquier "Iniciar sesión con Google": por seguridad, Google no
-permite hacerlo dentro de otra aplicación). Inicia sesión, acepta el acceso
-al calendario, y la ventana se cierra sola. El permiso queda guardado
-localmente en `Data/google-token/`, así que **no tendrás que volver a
-iniciar sesión**: la app recuerda la conexión entre usos.
+En la propia app, desde el móvil o desde el PC, pulsa **"Conectar con
+Google"**. Ese mismo navegador va al inicio de sesión oficial de Google;
+inicia sesión, acepta el acceso al calendario y vuelves a la app. Si Google
+muestra `redirect_uri_mismatch`, la dirección que estás usando no está entre
+las URIs de redireccionamiento de la credencial (paso 3). El permiso queda
+guardado en `Data/google-token/`, así que **no tendrás que volver a iniciar
+sesión**. "Desconectar" lo borra y además revoca el permiso en tu cuenta de
+Google.
 
 A partir de ahí, el uso diario es: escribes o dictas la tarea → pulsas
 "Revisar eventos" → confirmas la vista previa → se guarda en la app y se
@@ -330,12 +363,14 @@ crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
 - **Editar**: cada tarea tiene un botón "Editar" para cambiar el texto, el
   día, la hora o la duración. Si está conectada a Google, el evento se
   actualiza también.
-- **Eliminar**: borra la tarea localmente y, si estaba sincronizada,
-  también el evento en Google Calendar.
+- **Eliminar**: pide confirmación y borra la tarea localmente y, si estaba
+  sincronizada, también el evento en Google Calendar.
 - **Importar tareas desde Google**: trae a la app los eventos que ya tengas
   en tu Google Calendar para la semana actual (por ejemplo, si los creaste
   directamente desde el móvil o la web de Google). Los eventos ya conocidos
-  se actualizan y los nuevos se añaden como tareas.
+  se actualizan (y se mueven si cambiaron de día), los nuevos se añaden
+  como tareas y las tareas cuyo evento se borró en Google se borran también
+  aquí.
 
 > Los archivos `Data/credentials.json` y `Data/google-token/` contienen
 > información sensible de tu cuenta: no los compartas ni los subas a un
@@ -353,8 +388,10 @@ crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
   interfaz (ES/EN) y único punto de verdad sobre el idioma seleccionado.
 - `Services/TareaStorageService.cs` — guarda/lee las tareas en JSON, un
   archivo por fecha exacta, y el nombre personalizado de cada semana.
-- `Services/GoogleCalendarService.cs` — autenticación OAuth y creación de
-  eventos en Google Calendar.
+- `Services/GoogleCalendarService.cs` — autenticación OAuth (redirección
+  del navegador a `/google/callback`) y sincronización con Google Calendar.
+- `Services/AccesoService.cs` — contraseña de acceso para otros
+  dispositivos y su página de entrada (`/acceso`).
 - `Services/DeteccionVozService.cs` — filtro previo que descarta audio sin
   voz real (música, ruido, silencio) con Silero VAD, antes de llamar a
   Whisper.
@@ -372,6 +409,8 @@ crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
   (no solo `localhost`) con ese certificado.
 - `wwwroot/manifest.webmanifest` + `wwwroot/service-worker.js` — hacen la
   app instalable como PWA ("Añadir a pantalla de inicio" en el móvil).
+- `tests/SmartAgenda.Tests/` — tests xUnit del parser (español e inglés) y
+  del almacenamiento; GitHub Actions los ejecuta en cada push.
 
 ## Licencia
 

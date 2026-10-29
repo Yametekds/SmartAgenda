@@ -84,11 +84,15 @@ public class ParserLenguajeNaturalService
         // "mañana" dentro de "de la mañana" no debe interpretarse como la fecha de mañana.
         public Regex? RegexMananaEsMomentoDelDia { get; init; }
 
+        // Solo en español: la "y" de "las 7 y media" no separa dos eventos.
+        public Regex? RegexConjuncionDeHora { get; init; }
+
         public required string EventoSinTitulo { get; init; }
         public required string MotivoFechaHeredada { get; init; }
         public required string MotivoSinFechaExacta { get; init; }
         public required string MotivoRevisaDia { get; init; }
         public required string MotivoNumeroSueltoSinRespaldo { get; init; }
+        public required string MotivoHoraAsumidaTarde { get; init; }
 
         public bool TryParseNumero(string texto, out int valor)
         {
@@ -102,6 +106,7 @@ public class ParserLenguajeNaturalService
         // el punto interno de "a.m."/"p.m." mientras se divide por puntos de fin de frase (ver abajo).
         // Es el mismo patrón para ambos idiomas: "am"/"pm" se escriben igual en los dos.
         private const string MarcadorPunto = "\u0001";
+        private const string MarcadorConjuncionHora = "\u0002";
         private static readonly Regex RegexPuntoInternoPeriodo = new(@"(?<=[ap])\.(?=\s?m)", RegexOptions.IgnoreCase);
 
         public List<string> DividirEnClausulas(string entrada)
@@ -111,21 +116,51 @@ public class ParserLenguajeNaturalService
             // El riesgo es partir "p.m."/"a.m." por la mitad, así que su punto interno se protege
             // primero (no se puede usar mayúscula-tras-punto como pista: el dictado casi nunca capitaliza).
             var protegido = RegexPuntoInternoPeriodo.Replace(entrada.Trim(), MarcadorPunto);
+            if (RegexConjuncionDeHora is not null)
+            {
+                protegido = RegexConjuncionDeHora.Replace(protegido, MarcadorConjuncionHora);
+            }
 
-            var partes = RegexSeparadorClausulas.Split(protegido)
-                .Select(p => p.Replace(MarcadorPunto, ".").Trim())
-                .Where(p => p.Length > 0)
+            // El separador va entre paréntesis en la regex, así que Split lo devuelve también: en las
+            // posiciones pares quedan los tramos de texto y en las impares, el separador que los unía.
+            var trozos = RegexSeparadorClausulas.Split(protegido)
+                .Select(p => p.Replace(MarcadorPunto, ".").Replace(MarcadorConjuncionHora, Conjuncion))
                 .ToList();
+
+            var partes = new List<(string Texto, string? SeparadorPrevio)>();
+            string? separadorPendiente = null;
+            for (var i = 0; i < trozos.Count; i++)
+            {
+                if (i % 2 == 1)
+                {
+                    separadorPendiente = trozos[i].Trim();
+                    continue;
+                }
+
+                var texto = trozos[i].Trim();
+                if (texto.Length > 0) partes.Add((texto, partes.Count == 0 ? null : separadorPendiente));
+                separadorPendiente = null;
+            }
 
             if (partes.Count <= 1) return new List<string> { entrada.Trim() };
 
             var resultado = new List<string>();
-            foreach (var parte in partes)
+            foreach (var (parte, separadorPrevio) in partes)
             {
+                var esConjuncion = separadorPrevio is not null &&
+                                   string.Equals(separadorPrevio, Conjuncion.Trim(), StringComparison.OrdinalIgnoreCase);
+
                 if (resultado.Count > 0 && !TieneSenalTemporal(parte))
                 {
                     // No parece el inicio de un evento nuevo (p. ej. "...mis padres y mi hermano"):
                     // se trata como continuación del evento anterior, no como uno independiente.
+                    resultado[^1] = resultado[^1] + Conjuncion + parte;
+                }
+                else if (resultado.Count > 0 && esConjuncion && !TieneSenalTemporal(resultado[^1]))
+                {
+                    // Lo mismo al revés: "comida con mis padres y mi hermano mañana" — lo anterior a la
+                    // "y" no tenía fecha ni hora propias, así que es el principio de este mismo evento.
+                    // Solo con "y"/"and": tras un punto o una coma se respeta como evento aparte.
                     resultado[^1] = resultado[^1] + Conjuncion + parte;
                 }
                 else
@@ -158,35 +193,64 @@ public class ParserLenguajeNaturalService
                 texto = texto.Remove(matchDuracion.Index, matchDuracion.Length);
             }
 
-            // 2. Hora ("a las 10" / "at 10", "a las siete de la mañana" / "at seven in the morning", "10am")
+            // 2. Hora ("a las 10" / "at 10", "a las siete y media de la mañana" / "at half past seven", "10am")
             TimeOnly? hora = null;
+            var horaAsumidaTarde = false;
             var matchHora = RegexHora.Match(texto);
-            if (matchHora.Success)
+            if (matchHora.Success && TryParseNumero(matchHora.Groups["h"].Value, out var h))
             {
-                var hGroup = matchHora.Groups["h"].Success ? matchHora.Groups["h"] : matchHora.Groups["h2"];
-                var mGroup = matchHora.Groups["m"].Success ? matchHora.Groups["m"] : matchHora.Groups["m2"];
-                var periodoGroup = matchHora.Groups["periodo"].Success ? matchHora.Groups["periodo"] : matchHora.Groups["periodo2"];
-
-                if (TryParseNumero(hGroup.Value, out var h))
+                var minGroup = matchHora.Groups["m"];
+                var fracGroup = matchHora.Groups["frac"];
+                var min = 0;
+                var minutosValidos = true;
+                if (fracGroup.Success)
                 {
-                    var min = mGroup.Success && int.TryParse(mGroup.Value, out var mm) ? mm : 0;
-                    if (h <= 23 && min <= 59)
+                    // "media"/"half" = 30, "cuarto"/"quarter" = 15
+                    min = fracGroup.Value.ToLowerInvariant() is "media" or "half" ? 30 : 15;
+                }
+                else if (minGroup.Success)
+                {
+                    minutosValidos = TryParseNumero(minGroup.Value, out min);
+                }
+
+                if (minutosValidos && h <= 23 && min <= 59)
+                {
+                    var periodoGroup = matchHora.Groups["periodo"];
+                    if (periodoGroup.Success)
                     {
-                        if (periodoGroup.Success)
-                        {
-                            // Se quitan espacios y puntos para comparar ("p. m." y "p m" deben
-                            // reconocerse igual que "pm") y luego se mira solo la letra inicial.
-                            var periodo = Regex.Replace(periodoGroup.Value.ToLowerInvariant(), @"[.\s]", "");
-                            var esPm = periodo.StartsWith('p') || periodo.Contains("tarde") || periodo.Contains("noche") ||
-                                       periodo.Contains("afternoon") || periodo.Contains("evening") || periodo.Contains("night");
-                            var esAm = periodo.StartsWith('a') || periodo.Contains("mañana") || periodo.Contains("manana") ||
-                                       periodo.Contains("morning");
-                            if (esPm && h < 12) h += 12;
-                            if (esAm && h == 12) h = 0;
-                        }
-                        hora = new TimeOnly(h % 24, min);
-                        texto = texto.Remove(matchHora.Index, matchHora.Length);
+                        // Se quitan espacios y puntos para comparar ("p. m." y "p m" deben
+                        // reconocerse igual que "pm") y luego se mira solo la letra inicial.
+                        var periodo = Regex.Replace(periodoGroup.Value.ToLowerInvariant(), @"[.\s]", "");
+                        var esPm = periodo.StartsWith('p') || periodo.Contains("tarde") || periodo.Contains("noche") ||
+                                   periodo.Contains("afternoon") || periodo.Contains("evening") || periodo.Contains("night");
+                        var esAm = periodo.StartsWith('a') || periodo.Contains("mañana") || periodo.Contains("manana") ||
+                                   periodo.Contains("morning");
+                        if (esPm && h < 12) h += 12;
+                        if (esAm && h == 12) h = 0;
                     }
+                    else if (h is >= 1 and <= 7 && !matchHora.Groups["h"].Value.StartsWith('0'))
+                    {
+                        // Sin am/pm, "a las 7" en una agenda casi siempre es por la tarde (nadie
+                        // queda con el dentista a las 3 de la madrugada). Se asume la tarde, pero
+                        // se avisa para que el usuario lo compruebe. "07:00" con cero delante se
+                        // respeta como hora de 24h.
+                        h += 12;
+                        horaAsumidaTarde = true;
+                    }
+
+                    // "las ocho menos cuarto" / "quarter to eight" = 7:45. Se resta después de decidir
+                    // mañana/tarde, porque esa decisión se toma sobre la hora que se dijo (las ocho).
+                    var horaFinal = new TimeOnly(h % 24, 0);
+                    if (matchHora.Groups["menos"].Success && min > 0)
+                    {
+                        horaFinal = horaFinal.AddMinutes(-min);
+                    }
+                    else
+                    {
+                        horaFinal = horaFinal.AddMinutes(min);
+                    }
+                    hora = horaFinal;
+                    texto = texto.Remove(matchHora.Index, matchHora.Length);
                 }
             }
 
@@ -283,7 +347,8 @@ public class ParserLenguajeNaturalService
                 Duracion = duracion,
                 PermiteSupresionSiUnico = permiteSupresionSiUnico,
                 EsAmbiguo = bajaConfianza,
-                MotivoAmbiguedad = motivo
+                MotivoAmbiguedad = motivo,
+                AvisoHora = horaAsumidaTarde ? string.Format(MotivoHoraAsumidaTarde, hora!.Value.ToString("HH:mm")) : null
             };
         }
 
@@ -319,10 +384,26 @@ public class ParserLenguajeNaturalService
                 // hoy a ciegas) el número suelto se considera poco fiable por sí solo.
                 int? mesConRespaldo = mesExplicito ?? mesContexto;
                 var mes = mesConRespaldo ?? fechaHoy.Month;
+                var año = añoContexto;
 
-                if (mes is >= 1 and <= 12 && dia >= 1 && dia <= DateTime.DaysInMonth(añoContexto, mes))
+                // Nadie apunta en su agenda algo que ya pasó: "el 5 de enero" dicho en diciembre es
+                // el del año que viene, y "el 3" dicho el día 28 es el del mes que viene.
+                if (mes is >= 1 and <= 12 && dia >= 1 && dia <= DateTime.DaysInMonth(año, mes) && new DateOnly(año, mes, dia) < fechaHoy)
                 {
-                    var fechaPropuesta = new DateOnly(añoContexto, mes, dia);
+                    if (mesConRespaldo is null)
+                    {
+                        var siguiente = new DateOnly(año, mes, 1).AddMonths(1);
+                        (año, mes) = (siguiente.Year, siguiente.Month);
+                    }
+                    else
+                    {
+                        año++;
+                    }
+                }
+
+                if (mes is >= 1 and <= 12 && dia >= 1 && dia <= DateTime.DaysInMonth(año, mes))
+                {
+                    var fechaPropuesta = new DateOnly(año, mes, dia);
 
                     // Si el número no tiene un mes que lo respalde y además hay un día de la semana
                     // mencionado que NO coincide con esa fecha, el número es sospechoso — probablemente
@@ -458,9 +539,18 @@ public class ParserLenguajeNaturalService
                 // confunde con el número de un día del mes ("domingo cuatro" no tiene ninguna de esas marcas).
                 // Importante: ninguna de las dos alternativas termina en \b — un \b final falla cuando el
                 // periodo acaba en punto ("p.m."), porque un punto no es un carácter de "palabra".
+                // Los minutos admiten ":30", "y media", "y cuarto", "y veinte", "menos cuarto"...
+                // ("y 5 de mayo" no cuenta como minutos: eso es una fecha que viene detrás).
                 RegexHora = new Regex(
-                    $@"\b(?:a\s+)?las?\s+(?<h>\d{{1,2}}|{patronNumeroPalabra})(?::(?<m>\d{{2}}))?(?:\s*(?<periodo>{patronPeriodoDia}))?" +
-                    $@"|\b(?<h2>\d{{1,2}})(?::(?<m2>\d{{2}}))?\s*(?<periodo2>{patronPeriodoDia})\b",
+                    $@"\b(?:a\s+)?las?\s+(?<h>\d{{1,2}}|{patronNumeroPalabra})" +
+                    $@"(?::(?<m>\d{{2}})|\s+y\s+(?:(?<frac>media|cuarto)\b|(?<m>\d{{1,2}}|{patronNumeroPalabra})\b(?!\s+de\b))|\s+(?<menos>menos)\s+(?:(?<frac>cuarto)\b|(?<m>\d{{1,2}}|{patronNumeroPalabra})\b))?" +
+                    $@"(?:\s+en\s+punto)?(?:\s*(?<periodo>{patronPeriodoDia}))?" +
+                    $@"|\b(?<h>\d{{1,2}})(?::(?<m>\d{{2}}))?\s*(?<periodo>{patronPeriodoDia})\b",
+                    RegexOptions.IgnoreCase),
+                // Protege la "y" de "las 7 y media" / "las siete y cuarto" / "las 7 y 20" para que no
+                // se use como separador entre dos eventos distintos.
+                RegexConjuncionDeHora = new Regex(
+                    $@"(?<=\blas?\s+(?:\d{{1,2}}|{patronNumeroPalabra}))\s+y\s+(?=(?:media|cuarto)\b|(?:\d{{1,2}}|{patronNumeroPalabra})\b(?!\s+de\b))",
                     RegexOptions.IgnoreCase),
                 RegexDuracion = new Regex(
                     @"\b(?:durante|por|de)\s+(?<cantidad>\d+)\s*(?<unidad>horas?|h|minutos?|min)\b",
@@ -483,13 +573,14 @@ public class ParserLenguajeNaturalService
                     @"\b(el\s+|del\s+)?(?<dia>lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b",
                     RegexOptions.IgnoreCase),
                 RegexMesSuelto = new Regex($@"\b({patronMes})\b", RegexOptions.IgnoreCase),
-                RegexSeparadorClausulas = new Regex(@",|;|\by\b|\.", RegexOptions.IgnoreCase),
+                RegexSeparadorClausulas = new Regex(@"(,|;|\by\b|\.)", RegexOptions.IgnoreCase),
                 RegexMananaEsMomentoDelDia = new Regex(@"de la ma[nñ]ana", RegexOptions.IgnoreCase),
                 EventoSinTitulo = "(Evento sin título)",
                 MotivoFechaHeredada = "No repitió una fecha propia: se usó la del evento anterior.",
                 MotivoSinFechaExacta = "No se indicó una fecha exacta.",
                 MotivoRevisaDia = "No se indicó una fecha exacta: revisa el día.",
                 MotivoNumeroSueltoSinRespaldo = "Se interpretó un número suelto como día del mes, pero nada lo confirma (¿era en realidad una hora?). Revisa la fecha.",
+                MotivoHoraAsumidaTarde = "No dijiste si era de la mañana o de la tarde: se asumió las {0}. Revisa la hora.",
             };
         }
 
@@ -534,6 +625,9 @@ public class ParserLenguajeNaturalService
 
             var patronNumeroPalabra = string.Join("|", numeros.Keys.OrderByDescending(k => k.Length).Select(Regex.Escape));
             var patronMes = string.Join("|", meses.Keys.Select(Regex.Escape));
+            // "may" suelto es casi siempre el verbo ("I may call Ana"), no el mes: solo cuenta como
+            // mes cuando va pegado a un día ("May 5th", "the 5th of May"), que ya cubre RegexFechaExplicita.
+            var patronMesSuelto = string.Join("|", meses.Keys.Where(k => k != "may").Select(Regex.Escape));
             var patronDia = @"\d{1,2}(?:st|nd|rd|th)?|" + patronNumeroPalabra;
 
             // am/pm tolerante a variaciones típicas del dictado por voz: con o sin puntos, con o sin
@@ -554,10 +648,15 @@ public class ParserLenguajeNaturalService
                 },
                 // La hora exige el prefijo "at" (igual que el español exige "la(s)") o un sufijo
                 // am/pm/periodo del día: así nunca se confunde con el número de un día del mes.
+                // También "half past seven", "quarter to eight", "ten past 7" (con o sin "at" delante).
+                // "N to M" solo se acepta con "quarter" o "minutes", para no confundir "5 to 10 people".
                 RegexHora = new Regex(
-                    $@"\bat\s+(?<h>\d{{1,2}}|{patronNumeroPalabra})(?::(?<m>\d{{2}}))?(?:\s*(?<periodo>{patronPeriodoDia}))?" +
-                    $@"|\b(?<h2>\d{{1,2}})(?::(?<m2>\d{{2}}))?\s*(?<periodo2>{patronPeriodoDia})\b",
+                    $@"\b(?:at\s+)?(?:(?<frac>half|quarter)\s+(?:past|after|(?<menos>to|till|before))|(?<m>\d{{1,2}}|{patronNumeroPalabra})(?:\s+minutes?\s+(?:past|after|(?<menos>to|till|before))|\s+past))" +
+                    $@"\s+(?<h>\d{{1,2}}|{patronNumeroPalabra})(?:\s*o'?clock)?(?:\s*(?<periodo>{patronPeriodoDia}))?" +
+                    $@"|\bat\s+(?<h>\d{{1,2}}|{patronNumeroPalabra})(?::(?<m>\d{{2}}))?(?:\s*o'?clock)?(?:\s*(?<periodo>{patronPeriodoDia}))?" +
+                    $@"|\b(?<h>\d{{1,2}})(?::(?<m>\d{{2}}))?\s*(?<periodo>{patronPeriodoDia})\b",
                     RegexOptions.IgnoreCase),
+                RegexConjuncionDeHora = null, // en inglés los minutos no se unen con "and".
                 RegexDuracion = new Regex(
                     @"\bfor\s+(?<cantidad>\d+)\s*(?<unidad>hours?|hrs?|h|minutes?|mins?|min)\b",
                     RegexOptions.IgnoreCase),
@@ -580,14 +679,15 @@ public class ParserLenguajeNaturalService
                 RegexDiaSemana = new Regex(
                     @"\b(?:on\s+)?(?<dia>monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
                     RegexOptions.IgnoreCase),
-                RegexMesSuelto = new Regex($@"\b({patronMes})\b", RegexOptions.IgnoreCase),
-                RegexSeparadorClausulas = new Regex(@",|;|\band\b|\.", RegexOptions.IgnoreCase),
+                RegexMesSuelto = new Regex($@"\b({patronMesSuelto})\b", RegexOptions.IgnoreCase),
+                RegexSeparadorClausulas = new Regex(@"(,|;|\band\b|\.)", RegexOptions.IgnoreCase),
                 RegexMananaEsMomentoDelDia = null, // en inglés "tomorrow" y "morning" son palabras distintas: no hace falta.
                 EventoSinTitulo = "(Untitled event)",
                 MotivoFechaHeredada = "No date was given: the previous event's date was used.",
                 MotivoSinFechaExacta = "No exact date was given.",
                 MotivoRevisaDia = "No exact date was given: check the day.",
                 MotivoNumeroSueltoSinRespaldo = "A standalone number was read as a day of the month, but nothing confirms it (was it actually meant as a time?). Check the date.",
+                MotivoHoraAsumidaTarde = "You didn't say am or pm: {0} was assumed. Check the time.",
             };
         }
     }
