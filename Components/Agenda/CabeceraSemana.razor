@@ -1,0 +1,95 @@
+@using System.Globalization
+@inject LocalizationService L
+
+<nav class="cabecera-semana" aria-label="@L.T("semana.navegacion")">
+    <div class="cabecera-semana-titulo">
+        <span class="semana-numero">@L.T("semana.numero", ISOWeek.GetWeekOfYear(Lunes.ToDateTime(TimeOnly.MinValue))) · @Lunes.AddDays(3).Year</span>
+        @if (editando)
+        {
+            <input class="campo nombre-semana-campo" @bind="nombreEdit" @bind:event="oninput" @ref="campoNombre"
+                   @onblur="Guardar" @onkeydown="AlPulsarTecla" aria-label="@L.T("semana.renombrarTitle")" />
+        }
+        else
+        {
+            <button type="button" class="nombre-semana" title="@L.T("semana.renombrarTitle")" @onclick="EmpezarEdicion">
+                @(Nombre ?? Rango)
+            </button>
+        }
+        @if (Nombre is not null && !editando)
+        {
+            <span class="rango-semana">@Rango</span>
+        }
+    </div>
+
+    <div class="cabecera-semana-controles">
+        @if (!EsSemanaActual)
+        {
+            <button class="btn btn-texto btn-compacto" type="button" @onclick="OnHoy">@L.T("boton.hoy")</button>
+        }
+        <button class="btn-icono" type="button" title="@L.T("semana.anteriorTitle")" aria-label="@L.T("semana.anteriorTitle")" @onclick="OnAnterior">
+            <Icono Nombre="anterior" />
+        </button>
+        <button class="btn-icono" type="button" title="@L.T("semana.siguienteTitle")" aria-label="@L.T("semana.siguienteTitle")" @onclick="OnSiguiente">
+            <Icono Nombre="siguiente" />
+        </button>
+    </div>
+</nav>
+
+@code {
+    [Parameter] public DateOnly Lunes { get; set; }
+    [Parameter] public string? Nombre { get; set; }
+    [Parameter] public bool EsSemanaActual { get; set; }
+    [Parameter] public EventCallback OnAnterior { get; set; }
+    [Parameter] public EventCallback OnSiguiente { get; set; }
+    [Parameter] public EventCallback OnHoy { get; set; }
+    [Parameter] public EventCallback<string> OnRenombrar { get; set; }
+
+    private bool editando;
+    private bool enfocar;
+    private string nombreEdit = string.Empty;
+    private ElementReference campoNombre;
+
+    private string Rango
+    {
+        get
+        {
+            var cultura = CultureInfo.GetCultureInfo(L.CodigoCultura);
+            return $"{Lunes.ToString("d MMM", cultura)} – {Lunes.AddDays(6).ToString("d MMM", cultura)}";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (enfocar)
+        {
+            enfocar = false;
+            try { await campoNombre.FocusAsync(); } catch { /* el campo pudo desaparecer antes de enfocarlo */ }
+        }
+    }
+
+    private void EmpezarEdicion()
+    {
+        nombreEdit = Nombre ?? string.Empty;
+        editando = true;
+        enfocar = true;
+    }
+
+    private async Task Guardar()
+    {
+        if (!editando) return;
+        editando = false;
+        await OnRenombrar.InvokeAsync(nombreEdit);
+    }
+
+    private async Task AlPulsarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Guardar();
+        }
+        else if (e.Key == "Escape")
+        {
+            editando = false;
+        }
+    }
+}

@@ -1,99 +1,134 @@
 .app-shell {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     background: var(--color-bg);
 }
 
+/* Cabecera opaca: sin desenfoque de fondo, que obliga a repintar en cada scroll. */
 .app-header {
-    background: #0b0f12;
-    border-bottom: 1px solid var(--color-border);
     position: sticky;
     top: 0;
     z-index: 10;
+    background: var(--color-bg-hondo);
+    border-bottom: 1px solid var(--color-linea);
 }
 
 .app-header-inner {
-    max-width: 1100px;
+    max-width: 1240px;
     margin: 0 auto;
-    padding: 0.9rem 1.25rem;
+    padding: 0.7rem 1.5rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
 .app-brand {
-    font-family: "Roboto Flex", sans-serif;
-    font-weight: 500;
-    font-size: 1.15rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
     color: var(--color-text);
-    letter-spacing: 0.01em;
+    text-decoration: none;
+    font-size: 1.05rem;
+    font-weight: 450;
+    font-stretch: 112%;
+    letter-spacing: 0.005em;
 }
 
 .app-brand strong {
-    font-weight: 900;
-    color: var(--color-primary);
+    font-weight: 850;
 }
 
+.app-brand-marca {
+    color: var(--color-accent);
+}
+
+/* Selector de idioma: el fondo rojo se desliza entre ES y EN con transform. */
 .idioma-toggle {
-    display: flex;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 3px;
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
+    border-radius: 999px;
+}
+
+.idioma-indicador {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc(50% - 3px);
+    border-radius: 999px;
+    background: var(--color-primary);
+    transition: transform var(--t-medio) var(--ease-salida);
+}
+
+.idioma-toggle[data-activo="en"] .idioma-indicador {
+    transform: translateX(100%);
 }
 
 .idioma-toggle button {
+    position: relative;
+    z-index: 1;
+    min-width: 2.4rem;
+    padding: 0.25rem 0.6rem;
+    border: 0;
     background: transparent;
-    border: none;
     color: var(--color-text-muted);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.03em;
-    padding: 0.35rem 0.65rem;
-    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: color var(--t-medio) var(--ease-suave);
 }
 
-.idioma-toggle button + button {
-    border-left: 1px solid var(--color-border);
-}
-
-.idioma-toggle button.activo {
-    background: var(--color-primary);
+.idioma-toggle button[aria-pressed="true"] {
     color: #fff;
 }
 
 .app-main {
     flex: 1;
     width: 100%;
-    max-width: 1100px;
+    max-width: 1240px;
     margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    box-sizing: border-box;
+    padding: 2.25rem 1.5rem 4rem;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
+    .app-header-inner {
+        padding: 0.6rem 1rem;
+    }
+
     .app-main {
-        padding: 1.1rem 0.9rem 2rem;
+        padding: 1.5rem 1rem 3rem;
     }
 }
 
 #blazor-error-ui {
-    color-scheme: light only;
-    background: lightyellow;
-    bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
-    box-sizing: border-box;
     display: none;
-    left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
     position: fixed;
-    width: 100%;
+    left: 0;
+    bottom: 0;
     z-index: 1000;
+    width: 100%;
+    padding: 0.7rem 3rem 0.8rem 1.5rem;
+    background: var(--color-surface-raised);
+    border-top: 2px solid var(--color-primary);
+    color: var(--color-text);
 }
 
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 0.75rem;
-        top: 0.5rem;
-    }
+#blazor-error-ui .reload {
+    margin-left: 0.5rem;
+}
+
+#blazor-error-ui .dismiss {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.9rem;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 1.4rem;
+    line-height: 1;
+}

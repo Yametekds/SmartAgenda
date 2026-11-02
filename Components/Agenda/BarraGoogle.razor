@@ -1,0 +1,38 @@
+@inject GoogleCalendarService GoogleCalendar
+@inject LocalizationService L
+
+<section class="barra-google @(GoogleCalendar.EstaConectado ? "conectada" : "")">
+    @if (!GoogleCalendar.EstaConfigurado)
+    {
+        <p class="barra-google-texto"><span class="led" aria-hidden="true"></span>@L.T("google.noConfigurado")</p>
+    }
+    else if (!GoogleCalendar.EstaConectado)
+    {
+        <p class="barra-google-texto"><span class="led" aria-hidden="true"></span>@L.T("google.noConectado")</p>
+        <div class="barra-google-acciones">
+            <button class="btn btn-secundario btn-compacto" type="button" @onclick="OnConectar" disabled="@Conectando">
+                @if (Conectando) { <Icono Nombre="cargando" Tamano="14" /> }
+                <span>@(Conectando ? L.T("boton.conectando") : L.T("boton.conectarGoogle"))</span>
+            </button>
+        </div>
+    }
+    else
+    {
+        <p class="barra-google-texto"><span class="led" aria-hidden="true"></span>@L.T("google.conectado")</p>
+        <div class="barra-google-acciones">
+            <button class="btn btn-texto btn-compacto" type="button" @onclick="OnImportar" disabled="@Importando">
+                @if (Importando) { <Icono Nombre="cargando" Tamano="14" /> }
+                <span>@(Importando ? L.T("boton.importando") : L.T("boton.importarGoogle"))</span>
+            </button>
+            <button class="btn btn-texto btn-compacto" type="button" @onclick="OnDesconectar">@L.T("boton.desconectar")</button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public bool Conectando { get; set; }
+    [Parameter] public bool Importando { get; set; }
+    [Parameter] public EventCallback OnConectar { get; set; }
+    [Parameter] public EventCallback OnImportar { get; set; }
+    [Parameter] public EventCallback OnDesconectar { get; set; }
+}
