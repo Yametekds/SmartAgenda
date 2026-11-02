@@ -1,4 +1,4 @@
-using Microsoft.JSInterop;
+﻿using Microsoft.JSInterop;
 using SmartAgenda.Models;
 
 namespace SmartAgenda.Services;
@@ -91,31 +91,37 @@ public class LocalizationService
             "Ej: dentista el viernes 2 a las 7, y gimnasio mañana a las 18:00",
             "E.g.: dentist Friday the 2nd at 7, and gym tomorrow at 6pm"),
 
+        ["entrada.etiqueta"] = ("¿Qué tienes pendiente?", "What's coming up?"),
+        ["entrada.atajo"] = ("Ctrl + Enter para revisar", "Ctrl + Enter to review"),
+
         ["mic.iniciar"] = ("Dictar por voz", "Dictate by voice"),
         ["mic.detener"] = ("Detener grabación", "Stop recording"),
 
         ["aviso.permisoBloqueado"] = (
-            "🚫 Bloqueaste el acceso al micrófono. Haz clic en el icono junto a la URL de tu navegador para permitirlo y recarga la página.",
-            "🚫 You blocked microphone access. Click the icon next to your browser's address bar to allow it, then reload the page."),
+            "Bloqueaste el acceso al micrófono. Haz clic en el icono junto a la URL de tu navegador para permitirlo y recarga la página.",
+            "You blocked microphone access. Click the icon next to your browser's address bar to allow it, then reload the page."),
 
         ["boton.revisarEventos"] = ("Revisar eventos", "Review events"),
         ["boton.analizando"] = ("Analizando...", "Analyzing..."),
 
         ["aviso.grabando"] = (
-            "🎤 Grabando... habla con normalidad, se detiene sola al dejar de oír voz.",
-            "🎤 Recording... speak normally, it stops automatically once it stops hearing your voice."),
+            "Grabando... habla con normalidad, se detiene sola al dejar de oír voz.",
+            "Recording... speak normally, it stops automatically once it stops hearing your voice."),
         ["aviso.transcribiendo"] = (
-            "⏳ Transcribiendo el audio (puede tardar unos segundos la primera vez)...",
-            "⏳ Transcribing the audio (may take a few seconds the first time)..."),
+            "Transcribiendo el audio (puede tardar unos segundos la primera vez)...",
+            "Transcribing the audio (may take a few seconds the first time)..."),
 
         ["previa.singular"] = ("He entendido este evento", "I understood this event"),
         ["previa.plural"] = ("He entendido estos {0} eventos", "I understood these {0} events"),
-        ["previa.avisoAmbiguo"] = ("⚠ revisa los marcados", "⚠ check the flagged ones"),
+        ["previa.avisoAmbiguo"] = ("Revisa los marcados", "Check the flagged ones"),
         ["campo.titulo"] = ("Título", "Title"),
+        ["campo.fecha"] = ("Fecha", "Date"),
+        ["campo.hora"] = ("Hora", "Time"),
         ["previa.quitarTitle"] = ("Quitar este evento", "Remove this event"),
         ["boton.confirmarCrear"] = ("Confirmar y crear ({0})", "Confirm and create ({0})"),
         ["boton.creando"] = ("Creando...", "Creating..."),
         ["boton.cancelar"] = ("Cancelar", "Cancel"),
+        ["boton.cerrar"] = ("Cerrar", "Close"),
 
         ["google.noConfigurado"] = (
             "La integración con Google Calendar aún no está configurada. Revisa el README.md del proyecto: hay que crear unas credenciales propias en Google Cloud Console una sola vez (requisito técnico de Google, no de la app).",
@@ -125,14 +131,15 @@ public class LocalizationService
             "Connect your Google account so tasks are sent to your calendar automatically."),
         ["boton.conectarGoogle"] = ("Conectar con Google", "Connect with Google"),
         ["boton.conectando"] = ("Conectando...", "Connecting..."),
-        ["google.conectado"] = ("● Conectado a Google Calendar", "● Connected to Google Calendar"),
+        ["google.conectado"] = ("Conectado a Google Calendar", "Connected to Google Calendar"),
         ["boton.importarGoogle"] = ("Importar desde Google", "Import from Google"),
         ["boton.importando"] = ("Importando...", "Importing..."),
         ["boton.desconectar"] = ("Desconectar", "Disconnect"),
 
+        ["semana.navegacion"] = ("Navegación por semanas", "Week navigation"),
+        ["semana.numero"] = ("Semana {0}", "Week {0}"),
         ["semana.anteriorTitle"] = ("Semana anterior", "Previous week"),
         ["semana.siguienteTitle"] = ("Semana siguiente", "Next week"),
-        ["semana.nombrePorDefecto"] = ("Semana", "Week"),
         ["semana.renombrarTitle"] = ("Clic para renombrar esta semana", "Click to rename this week"),
         ["boton.hoy"] = ("Hoy", "Today"),
 
@@ -142,6 +149,7 @@ public class LocalizationService
         ["tarea.actualizarGoogleTitle"] = ("Actualizar en Google Calendar", "Update in Google Calendar"),
         ["tarea.eliminarTitle"] = ("Eliminar", "Delete"),
         ["tarea.confirmarEliminar"] = ("¿Eliminar?", "Delete?"),
+        ["tarea.sinHora"] = ("Sin hora", "No time"),
         ["tarea.sinTitulo"] = ("(Sin título)", "(Untitled)"),
         ["tarea.insigniaGoogleTitle"] = ("Sincronizada con Google Calendar", "Synced with Google Calendar"),
 
@@ -157,8 +165,8 @@ public class LocalizationService
             "Created {0} event(s), {1} synced with Google Calendar."),
         ["mensaje.eventosCreadosSinGoogle"] = ("Se crearon {0} evento(s).", "Created {0} event(s)."),
         ["mensaje.eventosSinSincronizar"] = (
-            "No se pudieron enviar a Google: {0}. Están guardados aquí; usa su botón ☁ para reintentarlo.",
-            "Couldn't send to Google: {0}. They're saved here; use their ☁ button to try again."),
+            "No se pudieron enviar a Google: {0}. Están guardados aquí; usa su botón de sincronizar para reintentarlo.",
+            "Couldn't send to Google: {0}. They're saved here; use their sync button to try again."),
         ["mensaje.tareaSincronizada"] = (
             "'{0}' sincronizada con Google Calendar.",
             "'{0}' synced with Google Calendar."),

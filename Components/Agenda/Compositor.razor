@@ -1,0 +1,183 @@
+@implements IAsyncDisposable
+@inject ParserLenguajeNaturalService Parser
+@inject LocalizationService L
+@inject IJSRuntime JS
+
+<section class="compositor @(grabando ? "grabando" : "") @(transcribiendo ? "transcribiendo" : "")">
+    <label class="compositor-etiqueta" for="entrada-texto">@L.T("entrada.etiqueta")</label>
+    <div class="compositor-caja">
+        <textarea id="entrada-texto" class="campo compositor-texto" rows="2" @bind="textoEntrada" @bind:event="oninput"
+                  @onkeydown="AlPulsarTecla" placeholder="@L.T("entrada.placeholder")"></textarea>
+        @if (vozSoportada)
+        {
+            <button class="btn-mic" type="button" disabled="@transcribiendo" aria-pressed="@(grabando ? "true" : "false")"
+                    title="@(grabando ? L.T("mic.detener") : L.T("mic.iniciar"))" aria-label="@(grabando ? L.T("mic.detener") : L.T("mic.iniciar"))"
+                    @onclick="AlternarGrabacion">
+                <Icono Nombre="@(transcribiendo ? "cargando" : grabando ? "detener" : "mic")" Tamano="20" />
+            </button>
+        }
+    </div>
+
+    <div class="compositor-pie">
+        <button class="btn btn-primario" type="button" @onclick="ProcesarEntrada" disabled="@(string.IsNullOrWhiteSpace(textoEntrada) || procesando)">
+            <span>@(procesando ? L.T("boton.analizando") : L.T("boton.revisarEventos"))</span>
+            <Icono Nombre="enviar" Tamano="16" />
+        </button>
+        <span class="compositor-atajo">@L.T("entrada.atajo")</span>
+    </div>
+
+    @if (permisoMicrofonoBloqueado)
+    {
+        <p class="nota nota-aviso"><Icono Nombre="aviso" Tamano="16" /> @L.T("aviso.permisoBloqueado")</p>
+    }
+    @if (grabando)
+    {
+        <p class="nota nota-viva"><span class="punto-vivo" aria-hidden="true"></span> @L.T("aviso.grabando")</p>
+    }
+    @if (transcribiendo)
+    {
+        <p class="nota"><Icono Nombre="cargando" Tamano="16" /> @L.T("aviso.transcribiendo")</p>
+    }
+</section>
+
+@code {
+    /// <summary>Lunes de la semana visible: las fechas relativas ("el viernes") se resuelven respecto a ella.</summary>
+    [Parameter] public DateOnly SemanaInicio { get; set; }
+
+    /// <summary>Eventos detectados en la entrada, listos para la vista previa.</summary>
+    [Parameter] public EventCallback<List<EventoPropuesto>> OnEventos { get; set; }
+
+    /// <summary>Mensaje de estado para la línea de avisos de la página (null lo borra).</summary>
+    [Parameter] public EventCallback<string?> OnMensaje { get; set; }
+
+    private string textoEntrada = string.Empty;
+    private bool procesando;
+    private bool vozSoportada;
+    private bool grabando;
+    private bool transcribiendo;
+    private bool permisoMicrofonoBloqueado;
+    private DotNetObjectReference<Compositor>? _dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        _dotNetRef = DotNetObjectReference.Create(this);
+        vozSoportada = await JS.InvokeAsync<bool>("smartAgendaSpeech.soportado");
+
+        if (vozSoportada)
+        {
+            // Pide el permiso de micrófono ya, en vez de esperar a que el usuario pulse el botón.
+            var estado = await JS.InvokeAsync<string>("smartAgendaSpeech.comprobarPermiso");
+            permisoMicrofonoBloqueado = estado == "denied";
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task AlPulsarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey))
+        {
+            await ProcesarEntrada();
+        }
+    }
+
+    /// <summary>Interpreta el texto (escrito o transcrito de audio) y lo manda a la vista previa; no guarda nada todavía.</summary>
+    private async Task ProcesarEntrada()
+    {
+        if (string.IsNullOrWhiteSpace(textoEntrada) || procesando) return;
+
+        procesando = true;
+        try
+        {
+            var eventos = Parser.ParsearMultiple(textoEntrada, L.Actual, semanaInicio: SemanaInicio);
+            if (eventos.Count == 0)
+            {
+                await OnMensaje.InvokeAsync(L.T("mensaje.sinEventos"));
+                return;
+            }
+
+            textoEntrada = string.Empty;
+            await OnMensaje.InvokeAsync(null);
+            await OnEventos.InvokeAsync(eventos);
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    private async Task AlternarGrabacion()
+    {
+        if (grabando)
+        {
+            await JS.InvokeVoidAsync("smartAgendaSpeech.detener");
+        }
+        else
+        {
+            grabando = true;
+            permisoMicrofonoBloqueado = false;
+            await JS.InvokeVoidAsync("smartAgendaSpeech.iniciar", _dotNetRef, L.CodigoWhisper);
+        }
+    }
+
+    /// <summary>La grabación terminó y el audio se está subiendo/transcribiendo en el servidor.</summary>
+    [JSInvokable]
+    public void OnTranscribiendo()
+    {
+        grabando = false;
+        transcribiendo = true;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnTranscripcion(string texto)
+    {
+        textoEntrada = string.IsNullOrWhiteSpace(textoEntrada) ? texto : $"{textoEntrada} {texto}";
+        grabando = false;
+        transcribiendo = false;
+        permisoMicrofonoBloqueado = false;
+
+        // Venido por voz: pasa directo a la vista previa, sin esperar a que pulsen "Revisar eventos".
+        await ProcesarEntrada();
+
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnErrorReconocimiento(string error)
+    {
+        grabando = false;
+        transcribiendo = false;
+
+        if (error == "not-allowed")
+        {
+            // Se muestra como aviso persistente junto al micrófono, no como mensaje suelto.
+            permisoMicrofonoBloqueado = true;
+            await OnMensaje.InvokeAsync(null);
+        }
+        else
+        {
+            await OnMensaje.InvokeAsync(error switch
+            {
+                "sin-audio" => L.T("error.sinAudio"),
+                "sin-voz" => L.T("error.sinVoz"),
+                "error-servidor" => L.T("error.servidor"),
+                "red" => L.T("error.red"),
+                _ => L.T("error.generico", error)
+            });
+        }
+
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_dotNetRef is not null)
+        {
+            try { await JS.InvokeVoidAsync("smartAgendaSpeech.detener"); } catch { /* el circuito puede ya estar cerrado */ }
+            _dotNetRef.Dispose();
+        }
+    }
+}

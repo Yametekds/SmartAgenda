@@ -1,0 +1,106 @@
+/* La vista previa se presenta como un resguardo: numerado, con cortes punteados. */
+.previa {
+    max-width: 46rem;
+    margin-bottom: 2.25rem;
+    padding: 1.1rem 1.25rem 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    animation: previa-entra var(--t-lento) var(--ease-salida) both;
+}
+
+@keyframes previa-entra {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: none; }
+}
+
+.previa-cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px dashed var(--color-border);
+}
+
+.previa-titulo {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.previa-marca {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.previa-lista {
+    margin-bottom: 1.1rem;
+}
+
+.previa-fila {
+    display: grid;
+    grid-template-columns: 2rem 1fr auto;
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0.8rem 0;
+    border-bottom: 1px dashed var(--color-border);
+    animation: entrar var(--t-medio) var(--ease-salida) both;
+    animation-delay: calc(80ms + var(--i, 0) * 45ms);
+}
+
+.previa-num {
+    padding-top: 0.45rem;
+    color: var(--color-text-tenue);
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.previa-fila.dudosa .previa-num {
+    color: var(--color-accent);
+}
+
+.previa-campos {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.previa-campos > .campo {
+    flex: 1 1 8.5rem;
+    width: auto;
+}
+
+.previa-campos > .previa-titulo-campo {
+    flex: 1 1 100%;
+}
+
+.previa-fila.dudosa .previa-titulo-campo {
+    border-color: rgba(195, 188, 158, 0.55);
+}
+
+.previa-duda {
+    flex-basis: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    color: var(--color-accent);
+    font-size: 0.8rem;
+}
+
+.previa-duda ::deep .icono {
+    margin-top: 0.15rem;
+}
+
+@media (min-width: 720px) {
+    .previa-campos > .previa-titulo-campo {
+        flex: 2 1 14rem;
+    }
+}
