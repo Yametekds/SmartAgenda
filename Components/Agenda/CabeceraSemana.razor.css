@@ -18,10 +18,9 @@
 .semana-numero {
     grid-column: 1 / -1;
     color: var(--color-text-tenue);
-    font-size: 0.72rem;
-    font-weight: 650;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
 }
 
 .nombre-semana {

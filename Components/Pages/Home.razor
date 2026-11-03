@@ -8,9 +8,10 @@
 
 <PageTitle>Smart Agenda</PageTitle>
 
+@* La portada es la fecha de hoy, como la cabecera de una página de agenda: es lo único que
+   cambia cada día y lo primero que se mira. *@
 <div class="portada">
-    <p class="portada-fecha">@HoyLargo</p>
-    <h1 class="portada-titulo">@L.T("hero.tituloPrefijo") <em>@L.T("hero.tituloAcento")</em></h1>
+    <h1 class="portada-titulo">@HoyDia <em>@HoyFecha</em></h1>
     <p class="portada-sub">@L.T("hero.subtitulo")</p>
 </div>
 
@@ -76,14 +77,18 @@
 
     private IEnumerable<DateOnly> DiasSemana => Enumerable.Range(0, 7).Select(i => semanaActual.AddDays(i));
 
-    private string HoyLargo
+    private CultureInfo Cultura => CultureInfo.GetCultureInfo(L.CodigoCultura);
+
+    private string HoyDia
     {
         get
         {
-            var texto = DateTime.Now.ToString(L.Actual == Idioma.En ? "dddd, MMMM d" : "dddd d 'de' MMMM", CultureInfo.GetCultureInfo(L.CodigoCultura));
-            return texto.Length == 0 ? texto : char.ToUpper(texto[0], CultureInfo.InvariantCulture) + texto[1..];
+            var dia = DateTime.Now.ToString("dddd", Cultura);
+            return dia.Length == 0 ? dia : char.ToUpper(dia[0], Cultura) + dia[1..];
         }
     }
+
+    private string HoyFecha => DateTime.Now.ToString(L.Actual == Idioma.En ? "MMMM d" : "d 'de' MMMM", Cultura);
 
     protected override async Task OnInitializedAsync()
     {
@@ -205,9 +210,10 @@
                 await CargarSemanaAsync();
             }
 
-            mensajeEstado = GoogleCalendar.EstaConectado
-                ? L.T("mensaje.eventosCreadosConGoogle", creadas, sincronizadas)
-                : L.T("mensaje.eventosCreadosSinGoogle", creadas);
+            // Si alguno no llegó a Google, el aviso de abajo lo explica; el resumen no lo da por enviado.
+            mensajeEstado = GoogleCalendar.EstaConectado && sincronizadas == creadas
+                ? L.Plural("mensaje.eventosCreadosConGoogle", creadas)
+                : L.Plural("mensaje.eventosCreados", creadas);
             if (sinSincronizar.Count > 0)
             {
                 mensajeEstado += " " + L.T("mensaje.eventosSinSincronizar", string.Join(", ", sinSincronizar));
@@ -344,7 +350,13 @@
             }
 
             await CargarSemanaAsync();
-            mensajeEstado = L.T("mensaje.importacionCompleta", nuevas, actualizadas, eliminadas);
+            var partes = new List<string>();
+            if (nuevas > 0) partes.Add(L.Plural("importacion.nuevas", nuevas));
+            if (actualizadas > 0) partes.Add(L.Plural("importacion.actualizadas", actualizadas));
+            if (eliminadas > 0) partes.Add(L.Plural("importacion.eliminadas", eliminadas));
+            mensajeEstado = partes.Count == 0
+                ? L.T("mensaje.importacionSinCambios")
+                : L.T("mensaje.importacion", L.Lista(partes));
         }
         catch (Exception ex)
         {
