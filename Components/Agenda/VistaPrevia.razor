@@ -24,7 +24,7 @@
                     <input type="time" class="campo campo-sm" aria-label="@L.T("campo.hora")" @bind="ev.Hora" @bind:after="() => ev.AvisoHora = null" />
                     <label class="campo-duracion" title="@L.T("edicion.duracionTitle")">
                         <input type="number" min="0" class="campo campo-sm" aria-label="@L.T("edicion.duracionTitle")"
-                               value="@((int)(ev.Duracion?.TotalMinutes ?? 0))"
+                               value="@(ev.Duracion is { } d ? ((int)d.TotalMinutes).ToString() : "")" placeholder="–"
                                @onchange="e => ev.Duracion = int.TryParse((string?)e.Value, out var min) && min > 0 ? TimeSpan.FromMinutes(min) : null" />
                         <span>min</span>
                     </label>

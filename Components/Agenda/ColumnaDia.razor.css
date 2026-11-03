@@ -65,9 +65,9 @@
 
 .dia-nombre {
     color: var(--color-text-muted);
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     font-weight: 650;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
 }
 
@@ -141,9 +141,15 @@
         margin: 0 0 0 auto;
     }
 
+    /* En la rejilla de escritorio un día vacío se queda en blanco, como en papel: repetir
+       "Sin tareas" en cinco columnas solo añade ruido. Se sigue anunciando a lectores de pantalla. */
     .dia-vacio {
-        align-self: start;
-        padding: 0 0.35rem;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
     }
 }
 

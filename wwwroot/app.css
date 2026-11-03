@@ -333,6 +333,7 @@ h1:focus {
 }
 
 /* --- Notas ligadas a un control ----------------------------------------- */
+/* Solo aparecen como respuesta a algo que hizo el usuario (grabar, transcribir, un permiso). */
 
 .nota {
     display: flex;
@@ -352,23 +353,15 @@ h1:focus {
     color: var(--color-accent);
 }
 
+/* Punto fijo: el aviso de que se está grabando ya lo da el anillo del micrófono; dos elementos
+   latiendo a la vez distraen más de lo que informan. */
 .punto-vivo {
-    position: relative;
     width: 0.5rem;
     height: 0.5rem;
     margin: 0.4rem 0.2rem 0 0.25rem;
     border-radius: 50%;
     background: var(--color-primary);
     flex-shrink: 0;
-}
-
-.punto-vivo::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: var(--color-primary);
-    animation: onda 1.4s var(--ease-salida) infinite;
 }
 
 /* --- Movimiento compartido (solo transform y opacity) ------------------- */
@@ -380,11 +373,6 @@ h1:focus {
 
 @keyframes girar {
     to { transform: rotate(360deg); }
-}
-
-@keyframes onda {
-    from { opacity: 0.6; transform: scale(1); }
-    to { opacity: 0; transform: scale(2.6); }
 }
 
 @media (prefers-reduced-motion: reduce) {
