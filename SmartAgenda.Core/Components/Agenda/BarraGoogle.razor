@@ -1,8 +1,16 @@
 @inject GoogleCalendarService GoogleCalendar
+@inject IConexionGoogle ConexionGoogle
 @inject LocalizationService L
 
 <section class="barra-google @(GoogleCalendar.EstaConectado ? "conectada" : "")">
-    @if (!GoogleCalendar.EstaConfigurado)
+    @if (!GoogleCalendar.EstaConfigurado && ConexionGoogle.PuedeImportarCredenciales)
+    {
+        <p class="barra-google-texto"><span class="led" aria-hidden="true"></span>@(credencialesNoValidas ? L.T("mensaje.credencialesNoValidas") : L.T("google.noConfiguradoMovil"))</p>
+        <div class="barra-google-acciones">
+            <button class="btn btn-secundario btn-compacto" type="button" @onclick="ElegirCredenciales">@L.T("boton.elegirCredenciales")</button>
+        </div>
+    }
+    else if (!GoogleCalendar.EstaConfigurado)
     {
         <p class="barra-google-texto"><span class="led" aria-hidden="true"></span>@L.T("google.noConfigurado")</p>
     }
@@ -35,4 +43,11 @@
     [Parameter] public EventCallback OnConectar { get; set; }
     [Parameter] public EventCallback OnImportar { get; set; }
     [Parameter] public EventCallback OnDesconectar { get; set; }
+
+    private bool credencialesNoValidas;
+
+    private async Task ElegirCredenciales()
+    {
+        credencialesNoValidas = !await ConexionGoogle.ImportarCredencialesAsync() && !GoogleCalendar.EstaConfigurado;
+    }
 }
