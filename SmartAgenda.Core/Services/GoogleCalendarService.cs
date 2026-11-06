@@ -7,10 +7,11 @@ using Google.Apis.Util.Store;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SmartAgenda.Models;
+using SmartAgenda.Services.Sincronizacion;
 
 namespace SmartAgenda.Services;
 
-public class GoogleCalendarService
+public class GoogleCalendarService : ICalendarioRemoto
 {
     public const string RutaConectar = "/google/conectar";
     public const string RutaCallback = "/google/callback";
@@ -132,48 +133,116 @@ public class GoogleCalendarService
         return _servicio;
     }
 
-    public async Task<string> CrearOActualizarEventoAsync(TareaItem tarea, DateOnly fecha)
+    // Claves de los campos privados que la app guarda en cada evento (solo los ve esta app).
+    public const string PropiedadId = "smartagendaId";
+    public const string PropiedadCompletada = "completada";
+
+    public bool Disponible => EstaConfigurado && EstaConectado;
+
+    /// <summary>
+    /// Crea o actualiza el evento de la tarea. Si ya existe, se parte del evento tal cual está en
+    /// Google y solo se cambian título, horario y los campos privados de la app, para no perder lo
+    /// que se haya añadido desde el propio Google Calendar (descripción, invitados, avisos...).
+    /// </summary>
+    public async Task<string> GuardarAsync(TareaItem tarea, CancellationToken ct = default)
     {
         var servicio = await ObtenerServicioAsync();
 
-        Event evento;
+        Event? existente = null;
+        if (!string.IsNullOrEmpty(tarea.GoogleEventId))
+        {
+            existente = await ObtenerEventoAsync(tarea.GoogleEventId, ct);
+            if (existente?.Status == "cancelled") existente = null;
+        }
+
+        var evento = existente ?? new Event();
+        AplicarTarea(evento, tarea, ObtenerZonaHorariaIana());
+
+        if (existente is not null)
+        {
+            var actualizado = await servicio.Events.Update(evento, "primary", existente.Id).ExecuteAsync(ct);
+            return actualizado.Id;
+        }
+
+        var creado = await servicio.Events.Insert(evento, "primary").ExecuteAsync(ct);
+        return creado.Id;
+    }
+
+    /// <summary>Copia en el evento los datos de la tarea: título, horario y campos privados de la app.</summary>
+    public static void AplicarTarea(Event evento, TareaItem tarea, string zonaHoraria)
+    {
+        evento.Summary = tarea.Texto;
+
         if (tarea.Hora is { } hora)
         {
-            var inicio = fecha.ToDateTime(hora);
+            var inicio = tarea.Fecha.ToDateTime(hora);
             var fin = inicio.Add(tarea.Duracion ?? TimeSpan.FromHours(1));
-            var zonaHoraria = ObtenerZonaHorariaIana();
-            evento = new Event
-            {
-                Summary = tarea.Texto,
-                Start = new EventDateTime { DateTimeDateTimeOffset = inicio, TimeZone = zonaHoraria },
-                End = new EventDateTime { DateTimeDateTimeOffset = fin, TimeZone = zonaHoraria }
-            };
+            evento.Start = new EventDateTime { DateTimeDateTimeOffset = inicio, TimeZone = zonaHoraria };
+            evento.End = new EventDateTime { DateTimeDateTimeOffset = fin, TimeZone = zonaHoraria };
         }
         else
         {
-            evento = new Event
-            {
-                Summary = tarea.Texto,
-                Start = new EventDateTime { Date = fecha.ToString("yyyy-MM-dd") },
-                End = new EventDateTime { Date = fecha.AddDays(1).ToString("yyyy-MM-dd") }
-            };
+            evento.Start = new EventDateTime { Date = tarea.Fecha.ToString("yyyy-MM-dd") };
+            evento.End = new EventDateTime { Date = tarea.Fecha.AddDays(1).ToString("yyyy-MM-dd") };
         }
 
-        if (!string.IsNullOrEmpty(tarea.GoogleEventId))
+        evento.ExtendedProperties ??= new Event.ExtendedPropertiesData();
+        evento.ExtendedProperties.Private__ ??= new Dictionary<string, string>();
+        evento.ExtendedProperties.Private__[PropiedadId] = tarea.Id.ToString();
+        evento.ExtendedProperties.Private__[PropiedadCompletada] = tarea.Completada ? "true" : "false";
+    }
+
+    /// <summary>Traduce un evento de Google a lo que entiende la agenda, o null si no tiene una fecha utilizable.</summary>
+    public static EventoRemoto? LeerEvento(Event evento)
+    {
+        if (string.IsNullOrEmpty(evento.Id)) return null;
+
+        Guid? id = null;
+        bool? completada = null;
+        if (evento.ExtendedProperties?.Private__ is { } privados)
         {
-            try
-            {
-                var actualizado = await servicio.Events.Update(evento, "primary", tarea.GoogleEventId).ExecuteAsync();
-                return actualizado.Id;
-            }
-            catch (Google.GoogleApiException)
-            {
-                // El evento ya no existe en el calendario; se crea uno nuevo.
-            }
+            if (privados.TryGetValue(PropiedadId, out var texto) && Guid.TryParse(texto, out var guid)) id = guid;
+            if (privados.TryGetValue(PropiedadCompletada, out var valor) && bool.TryParse(valor, out var c)) completada = c;
         }
 
-        var creado = await servicio.Events.Insert(evento, "primary").ExecuteAsync();
-        return creado.Id;
+        var actualizado = evento.UpdatedDateTimeOffset?.UtcDateTime ?? DateTime.MinValue;
+
+        if (evento.Status == "cancelled")
+        {
+            return new EventoRemoto { Id = evento.Id, Cancelado = true, SmartagendaId = id, Actualizado = actualizado };
+        }
+
+        DateOnly fecha;
+        TimeOnly? hora = null;
+        TimeSpan? duracion = null;
+        if (evento.Start?.DateTimeDateTimeOffset is { } inicio)
+        {
+            // Pasado a la hora local de este equipo: un evento creado en otra zona horaria debe
+            // verse a la hora a la que ocurre aquí, no a la de su zona de origen.
+            fecha = DateOnly.FromDateTime(inicio.LocalDateTime);
+            hora = TimeOnly.FromDateTime(inicio.LocalDateTime);
+            if (evento.End?.DateTimeDateTimeOffset is { } fin) duracion = fin - inicio;
+        }
+        else if (!string.IsNullOrEmpty(evento.Start?.Date) && DateOnly.TryParseExact(evento.Start.Date, "yyyy-MM-dd", out var fechaSolo))
+        {
+            fecha = fechaSolo;
+        }
+        else
+        {
+            return null;
+        }
+
+        return new EventoRemoto
+        {
+            Id = evento.Id,
+            SmartagendaId = id,
+            Texto = evento.Summary?.Trim() ?? string.Empty,
+            Fecha = fecha,
+            Hora = hora,
+            Duracion = duracion,
+            Completada = completada,
+            Actualizado = actualizado
+        };
     }
 
     /// <summary>Google Calendar exige IDs de zona horaria IANA; en Windows TimeZoneInfo.Local.Id usa su propio formato.</summary>
@@ -183,43 +252,55 @@ public class GoogleCalendarService
         return TimeZoneInfo.TryConvertWindowsIdToIanaId(id, out var iana) ? iana : id;
     }
 
-    public async Task EliminarEventoAsync(string googleEventId)
+    public async Task EliminarAsync(string eventoId, CancellationToken ct = default)
     {
         var servicio = await ObtenerServicioAsync();
         try
         {
-            await servicio.Events.Delete("primary", googleEventId).ExecuteAsync();
+            await servicio.Events.Delete("primary", eventoId).ExecuteAsync(ct);
         }
-        catch (Google.GoogleApiException)
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
         {
             // Ya no existe; no es un error para el usuario.
         }
     }
 
-    /// <summary>Trae los eventos del calendario principal de Google para los 7 días que empiezan en <paramref name="lunes"/>.</summary>
-    public async Task<List<Event>> ObtenerEventosSemanaAsync(DateOnly lunes)
+    public async Task<List<EventoRemoto>> ObtenerCambiosAsync(DateOnly desde, DateOnly hasta, DateTimeOffset? modificadosDesde, CancellationToken ct = default)
     {
         var servicio = await ObtenerServicioAsync();
+        var resultado = new List<EventoRemoto>();
+        string? pagina = null;
 
-        var solicitud = servicio.Events.List("primary");
-        solicitud.TimeMinDateTimeOffset = lunes.ToDateTime(TimeOnly.MinValue);
-        solicitud.TimeMaxDateTimeOffset = lunes.AddDays(7).ToDateTime(TimeOnly.MinValue);
-        solicitud.SingleEvents = true;
-        // Incluye los eventos borrados en Google (Status = "cancelled") para poder borrarlos también aquí.
-        solicitud.ShowDeleted = true;
-        solicitud.MaxResults = 2500;
+        do
+        {
+            var solicitud = servicio.Events.List("primary");
+            solicitud.TimeMinDateTimeOffset = desde.ToDateTime(TimeOnly.MinValue);
+            solicitud.TimeMaxDateTimeOffset = hasta.ToDateTime(TimeOnly.MinValue);
+            solicitud.SingleEvents = true;
+            // Incluye los eventos borrados (Status = "cancelled") para poder borrarlos también aquí.
+            solicitud.ShowDeleted = true;
+            solicitud.MaxResults = 2500;
+            solicitud.PageToken = pagina;
+            if (modificadosDesde is { } minimo) solicitud.UpdatedMinDateTimeOffset = minimo;
 
-        var resultado = await solicitud.ExecuteAsync();
-        return resultado.Items?.ToList() ?? new List<Event>();
+            var respuesta = await solicitud.ExecuteAsync(ct);
+            foreach (var evento in respuesta.Items ?? [])
+            {
+                if (LeerEvento(evento) is { } leido) resultado.Add(leido);
+            }
+            pagina = respuesta.NextPageToken;
+        } while (!string.IsNullOrEmpty(pagina));
+
+        return resultado;
     }
 
     /// <summary>Un evento concreto por su id, o null si ya no existe en el calendario.</summary>
-    public async Task<Event?> ObtenerEventoAsync(string googleEventId)
+    private async Task<Event?> ObtenerEventoAsync(string googleEventId, CancellationToken ct)
     {
         var servicio = await ObtenerServicioAsync();
         try
         {
-            return await servicio.Events.Get("primary", googleEventId).ExecuteAsync();
+            return await servicio.Events.Get("primary", googleEventId).ExecuteAsync(ct);
         }
         catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
         {
