@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Whisper.net;
 using Whisper.net.Ggml;
@@ -31,9 +32,9 @@ public class TranscripcionAudioService
     // estos casos antes de siquiera llamar a Whisper.
     private static readonly Regex RegexEtiquetaNoHablada = new(@"\[[^\]]{0,60}\]|\([^)]{0,60}\)", RegexOptions.IgnoreCase);
 
-    public TranscripcionAudioService(IWebHostEnvironment env, IOptions<OpcionesVoz> opciones, DeteccionVozService deteccionVoz, ILogger<TranscripcionAudioService> logger)
+    public TranscripcionAudioService(IRutasApp rutas, IOptions<OpcionesVoz> opciones, DeteccionVozService deteccionVoz, ILogger<TranscripcionAudioService> logger)
     {
-        _modeloDir = Path.Combine(env.ContentRootPath, "Data", "modelo-voz");
+        _modeloDir = Path.Combine(rutas.CarpetaDatos, "modelo-voz");
         Directory.CreateDirectory(_modeloDir);
         _opciones = opciones.Value;
         _modeloPath = Path.Combine(_modeloDir, ModeloVoz.NombreArchivo(_opciones.Modelo, _opciones.Cuantizacion));

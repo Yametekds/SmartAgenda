@@ -1,5 +1,5 @@
 // Graba audio con APIs estándar del navegador (getUserMedia + AudioContext), soportadas
-// prácticamente en cualquier navegador moderno, y lo sube al servidor para transcribirlo con
+// prácticamente en cualquier navegador moderno, y se lo pasa a .NET para transcribirlo con
 // Whisper (en vez de depender del reconocimiento de voz propio de cada navegador, que solo
 // funciona bien en Chrome/Edge). El texto resultante entra por el mismo flujo que si se
 // hubiera escrito a mano.
@@ -137,24 +137,22 @@ window.smartAgendaSpeech = {
 
         dotNetRef.invokeMethodAsync('OnTranscribiendo');
 
+        let texto;
         try {
-            const wavBlob = this._codificarWav(muestras, sampleRateOrigen, 16000);
-            const respuesta = await fetch('/api/transcribir?idioma=' + this._idioma, { method: 'POST', body: wavBlob });
-
-            if (!respuesta.ok) {
-                dotNetRef.invokeMethodAsync('OnErrorReconocimiento', 'error-servidor');
-                return;
-            }
-
-            const json = await respuesta.json();
-            const texto = (json.texto || '').trim();
-            if (texto.length === 0) {
-                dotNetRef.invokeMethodAsync('OnErrorReconocimiento', 'sin-voz');
-            } else {
-                dotNetRef.invokeMethodAsync('OnTranscripcion', texto);
-            }
+            // El audio viaja como flujo por la propia conexión de Blazor (sin petición HTTP aparte),
+            // así funciona igual en la web que dentro de la app Android, donde no hay servidor.
+            const wav = this._codificarWav(muestras, sampleRateOrigen, 16000);
+            const audio = DotNet.createJSStreamReference(new Uint8Array(wav));
+            texto = ((await dotNetRef.invokeMethodAsync('TranscribirAudio', audio, this._idioma)) || '').trim();
         } catch (e) {
-            dotNetRef.invokeMethodAsync('OnErrorReconocimiento', 'red');
+            dotNetRef.invokeMethodAsync('OnErrorReconocimiento', 'error-servidor');
+            return;
+        }
+
+        if (texto.length === 0) {
+            dotNetRef.invokeMethodAsync('OnErrorReconocimiento', 'sin-voz');
+        } else {
+            dotNetRef.invokeMethodAsync('OnTranscripcion', texto);
         }
     },
 
@@ -216,6 +214,6 @@ window.smartAgendaSpeech = {
             view.setInt16(o, pcm[i], true);
         }
 
-        return new Blob([buffer], { type: 'audio/wav' });
+        return buffer;
     }
 };

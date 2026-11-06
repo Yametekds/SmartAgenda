@@ -6,20 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <!-- El proyecto de tests vive en tests/ y tiene su propio .csproj: que no se compile también aquí. -->
+  <!-- La librería compartida y los tests tienen su propio .csproj: que no se compilen también aquí. -->
   <ItemGroup>
-    <Compile Remove="tests\**" />
-    <Content Remove="tests\**" />
-    <None Remove="tests\**" />
-    <EmbeddedResource Remove="tests\**" />
+    <Compile Remove="tests\**;SmartAgenda.Core\**" />
+    <Content Remove="tests\**;SmartAgenda.Core\**" />
+    <None Remove="tests\**;SmartAgenda.Core\**" />
+    <EmbeddedResource Remove="tests\**;SmartAgenda.Core\**" />
   </ItemGroup>
 
+  <!-- Componentes, servicios y modelos compartidos con la app Android. -->
   <ItemGroup>
-    <PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
-    <PackageReference Include="Google.Apis.Calendar.v3" Version="1.75.0.4206" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
-    <PackageReference Include="Whisper.net" Version="1.9.1" />
-    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <ProjectReference Include="SmartAgenda.Core\SmartAgenda.Core.csproj" />
   </ItemGroup>
 
 </Project>
