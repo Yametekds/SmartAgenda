@@ -378,19 +378,27 @@ A partir de ahí, el uso diario es: escribes o dictas la tarea → pulsas
 "Revisar eventos" → confirmas la vista previa → se guarda en la app y se
 crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
 
-### Editar, eliminar e importar
+### Editar, eliminar y sincronizar
 
 - **Editar**: cada tarea tiene un botón "Editar" para cambiar el texto, el
-  día, la hora o la duración. Si está conectada a Google, el evento se
-  actualiza también.
-- **Eliminar**: pide confirmación y borra la tarea localmente y, si estaba
+  día, la hora o la duración.
+- **Eliminar**: pide confirmación y borra la tarea aquí y, si estaba
   sincronizada, también el evento en Google Calendar.
-- **Importar tareas desde Google**: trae a la app los eventos que ya tengas
-  en tu Google Calendar para la semana actual (por ejemplo, si los creaste
-  directamente desde el móvil o la web de Google). Los eventos ya conocidos
-  se actualizan (y se mueven si cambiaron de día), los nuevos se añaden
-  como tareas y las tareas cuyo evento se borró en Google se borran también
-  aquí.
+- **Sincronización automática**: cada dispositivo guarda su propia copia de
+  las tareas y funciona sin conexión. Google Calendar es la copia
+  compartida: la app sincroniza al abrirse, unos segundos después de cada
+  cambio, cada 5 minutos y con el botón "Sincronizar ahora". Lo que hagas
+  sin conexión se envía en cuanto la haya.
+  - Sincroniza en los dos sentidos: eventos nuevos, ediciones, cambios de
+    día, tareas completadas y borrados, incluidos los eventos creados
+    directamente en Google Calendar (de 60 días atrás a un año vista).
+  - Cada tarea lleva un identificador fijo (guardado de forma privada en su
+    evento de Google), así todos los dispositivos la reconocen aunque cambie
+    de título.
+  - Si la misma tarea cambia en dos dispositivos antes de sincronizar, gana
+    el cambio más reciente.
+  - Lo que añadas al evento desde el propio Google Calendar (descripción,
+    invitados, avisos) se conserva cuando la app lo actualiza.
 
 > Los archivos `Data/credentials.json` y `Data/google-token/` contienen
 > información sensible de tu cuenta: no los compartas ni los subas a un
@@ -410,8 +418,12 @@ El código se divide en dos proyectos: `SmartAgenda.Core/` contiene todo lo que 
   interfaz (ES/EN) y único punto de verdad sobre el idioma seleccionado.
 - `SmartAgenda.Core/Services/TareaStorageService.cs` — guarda/lee las tareas en JSON, un
   archivo por fecha exacta, y el nombre personalizado de cada semana.
-- `SmartAgenda.Core/Services/GoogleCalendarService.cs` — autenticación OAuth (redirección
-  del navegador a `/google/callback`) y sincronización con Google Calendar.
+- `SmartAgenda.Core/Services/GoogleCalendarService.cs` — autenticación OAuth2
+  (redirección del navegador a `/google/callback`) y lectura/escritura de
+  eventos en Google Calendar.
+- `SmartAgenda.Core/Services/Sincronizacion/` — sincronización en los dos
+  sentidos entre este dispositivo y Google Calendar (cola sin conexión,
+  borrados, gana el cambio más reciente).
 - `Services/AccesoService.cs` — contraseña de acceso para otros
   dispositivos y su página de entrada (`/acceso`).
 - `SmartAgenda.Core/Services/DeteccionVozService.cs` — filtro previo que descarta audio sin

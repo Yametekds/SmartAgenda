@@ -33,7 +33,7 @@
                     <span class="tarea-duracion">@((int)d.TotalMinutes) min</span>
                 }
             </span>
-            <span class="tarea-texto">@Tarea.Texto</span>
+            <span class="tarea-texto">@(string.IsNullOrWhiteSpace(Tarea.Texto) ? L.T("tarea.sinTitulo") : Tarea.Texto)</span>
             @if (!string.IsNullOrEmpty(Tarea.GoogleEventId))
             {
                 <span class="insignia-google" title="@L.T("tarea.insigniaGoogleTitle")">G</span>
