@@ -56,6 +56,8 @@ if (certificadoHttps is not null)
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Services.AddSingleton<IRutasApp, RutasWeb>();
+builder.Services.AddScoped<IConexionGoogle, ConexionGoogleWeb>();
 builder.Services.AddSingleton<TareaStorageService>();
 builder.Services.AddSingleton<ParserLenguajeNaturalService>();
 builder.Services.AddSingleton<GoogleCalendarService>();
@@ -135,10 +137,9 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(SmartAgenda.Components.Pages.Home).Assembly);
 
-// Recibe un audio WAV grabado en el navegador y devuelve el texto transcrito con Whisper,
-// ejecutado localmente en este servidor (sin API key ni servicios externos de pago).
 static bool PrefiereIngles(HttpRequest request) =>
     !request.Headers.AcceptLanguage.ToString().TrimStart().StartsWith("es", StringComparison.OrdinalIgnoreCase);
 
@@ -204,32 +205,6 @@ app.MapGet(GoogleCalendarService.RutaCallback, async (HttpContext ctx, GoogleCal
     {
         logger.LogError(ex, "No se pudo canjear el código de Google por un token.");
         return Results.Redirect("/?google=error");
-    }
-});
-
-app.MapPost("/api/transcribir", async (HttpRequest request, TranscripcionAudioService transcripcion, ILogger<Program> logger) =>
-{
-    using var buffer = new MemoryStream();
-    await request.Body.CopyToAsync(buffer);
-    buffer.Position = 0;
-
-    if (buffer.Length == 0)
-    {
-        return Results.BadRequest(new { error = "No se recibió audio." });
-    }
-
-    var idioma = request.Query["idioma"].ToString();
-
-    try
-    {
-        var texto = await transcripcion.TranscribirAsync(buffer, idioma);
-        return Results.Ok(new { texto });
-    }
-    catch (Exception ex)
-    {
-        // El detalle se queda en el log del servidor; al navegador solo le llega que falló.
-        logger.LogError(ex, "Error al transcribir el audio.");
-        return Results.Problem("No se pudo transcribir el audio.");
     }
 });
 

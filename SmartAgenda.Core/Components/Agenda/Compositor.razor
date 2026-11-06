@@ -2,6 +2,8 @@
 @inject ParserLenguajeNaturalService Parser
 @inject LocalizationService L
 @inject IJSRuntime JS
+@inject TranscripcionAudioService Transcripcion
+@inject ILogger<Compositor> Logger
 
 <section class="compositor @(grabando ? "grabando" : "") @(transcribiendo ? "transcribiendo" : "")">
     <label class="compositor-etiqueta" for="entrada-texto">@L.T("entrada.etiqueta")</label>
@@ -129,6 +131,31 @@
         grabando = false;
         transcribiendo = true;
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Recibe el audio grabado (WAV, 16 kHz, mono) y lo transcribe con Whisper en este mismo
+    /// dispositivo. Va por la conexión de Blazor en vez de por una petición HTTP aparte, así
+    /// funciona igual en la web que dentro de la app Android, donde no hay servidor.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string> TranscribirAudio(IJSStreamReference audio, string idioma)
+    {
+        try
+        {
+            using var wav = new MemoryStream();
+            await using (var flujo = await audio.OpenReadStreamAsync(maxAllowedSize: 20_000_000))
+            {
+                await flujo.CopyToAsync(wav);
+            }
+            return await Transcripcion.TranscribirAsync(wav, idioma);
+        }
+        catch (Exception ex)
+        {
+            // El detalle se queda en el log; a la interfaz solo le llega que falló.
+            Logger.LogError(ex, "Error al transcribir el audio.");
+            throw new InvalidOperationException("No se pudo transcribir el audio.");
+        }
     }
 
     [JSInvokable]

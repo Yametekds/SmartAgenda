@@ -398,31 +398,33 @@ crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
 
 ## Estructura del proyecto
 
-- `Components/Pages/Home.razor` — interfaz principal (entrada de texto/voz,
+El código se divide en dos proyectos: `SmartAgenda.Core/` contiene todo lo que se comparte con la futura app Android (componentes, servicios, modelos, estilos y captura de audio), y el proyecto raíz es el host web (arranque, HTTPS, contraseña de acceso y redirección del inicio de sesión de Google).
+
+- `SmartAgenda.Core/Components/Pages/Home.razor` — interfaz principal (entrada de texto/voz,
   vista previa de eventos y vista semanal).
-- `Services/ParserLenguajeNaturalService.cs` — único punto de interpretación
+- `SmartAgenda.Core/Services/ParserLenguajeNaturalService.cs` — único punto de interpretación
   de lenguaje natural (texto y, tras transcribirse, también audio): detecta
   uno o varios eventos, fechas explícitas y relativas, y contexto temporal
   compartido entre ellos, tanto en español como en inglés.
-- `Services/LocalizationService.cs` — traducción de los textos de la
+- `SmartAgenda.Core/Services/LocalizationService.cs` — traducción de los textos de la
   interfaz (ES/EN) y único punto de verdad sobre el idioma seleccionado.
-- `Services/TareaStorageService.cs` — guarda/lee las tareas en JSON, un
+- `SmartAgenda.Core/Services/TareaStorageService.cs` — guarda/lee las tareas en JSON, un
   archivo por fecha exacta, y el nombre personalizado de cada semana.
-- `Services/GoogleCalendarService.cs` — autenticación OAuth (redirección
+- `SmartAgenda.Core/Services/GoogleCalendarService.cs` — autenticación OAuth (redirección
   del navegador a `/google/callback`) y sincronización con Google Calendar.
 - `Services/AccesoService.cs` — contraseña de acceso para otros
   dispositivos y su página de entrada (`/acceso`).
-- `Services/DeteccionVozService.cs` — filtro previo que descarta audio sin
+- `SmartAgenda.Core/Services/DeteccionVozService.cs` — filtro previo que descarta audio sin
   voz real (música, ruido, silencio) con Silero VAD, antes de llamar a
   Whisper.
-- `Services/TranscripcionAudioService.cs` — transcribe el audio grabado a
+- `SmartAgenda.Core/Services/TranscripcionAudioService.cs` — transcribe el audio grabado a
   texto con Whisper, ejecutado localmente (descarga el modelo en segundo
   plano la primera vez a `Data/modelo-voz/` y comprueba su huella SHA-256).
-- `Services/ModeloVoz.cs` — configuración del modelo de voz (sección `Voz`
+- `SmartAgenda.Core/Services/ModeloVoz.cs` — configuración del modelo de voz (sección `Voz`
   de `appsettings.json`), catálogo de modelos con tamaños y huellas, y el
   vocabulario de agenda que se le da a Whisper como contexto.
-- `wwwroot/js/speech.js` — graba audio en el navegador (APIs estándar,
-  soportadas en cualquier navegador) y lo sube a `/api/transcribir`; el
+- `SmartAgenda.Core/wwwroot/js/speech.js` — graba audio en el navegador (APIs estándar,
+  soportadas en cualquier navegador) y se lo pasa a .NET como flujo por la propia conexión de Blazor (sin petición HTTP aparte, así también funciona dentro de la app Android); el
   texto resultante entra por el mismo flujo que si se hubiera escrito a
   mano. También detecta el silencio para detener sola la grabación.
 - `scripts/generar-certificado-lan.ps1` — genera el certificado autofirmado

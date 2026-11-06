@@ -5,6 +5,7 @@
 @inject GoogleCalendarService GoogleCalendar
 @inject LocalizationService L
 @inject NavigationManager Navigation
+@inject IConexionGoogle ConexionGoogle
 
 <PageTitle>Smart Agenda</PageTitle>
 
@@ -94,11 +95,15 @@
     {
         L.OnCambio += AlCambiarIdioma;
 
-        // Vuelta del inicio de sesión de Google (ver /google/callback en Program.cs).
-        var consulta = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
-        if (consulta.TryGetValue("google", out var resultadoGoogle))
+        // Vuelta del inicio de sesión de Google en la web (ver /google/callback en Program.cs).
+        var consulta = new Uri(Navigation.Uri).Query;
+        if (consulta.Contains("google=ok"))
         {
-            mensajeEstado = resultadoGoogle == "ok" ? L.T("mensaje.conectadoGoogle") : L.T("mensaje.errorConectarGoogleRedireccion");
+            mensajeEstado = L.T("mensaje.conectadoGoogle");
+        }
+        else if (consulta.Contains("google=error"))
+        {
+            mensajeEstado = L.T("mensaje.errorConectarGoogleRedireccion");
         }
 
         semanaActual = LunesDeHoy();
@@ -286,12 +291,12 @@
         await CargarSemanaAsync();
     }
 
-    private void ConectarGoogle()
+    private async Task ConectarGoogle()
     {
-        // El inicio de sesión de Google se hace en este mismo navegador (móvil o PC): se sale de la
-        // app a la página de Google y se vuelve a /google/callback, que deja el token guardado.
+        // Cada plataforma inicia sesión a su manera (ver IConexionGoogle): en la web se sale a la
+        // página de Google y se vuelve a /google/callback, que deja el token guardado.
         conectando = true;
-        Navigation.NavigateTo(GoogleCalendarService.RutaConectar, forceLoad: true);
+        await ConexionGoogle.IniciarAsync();
     }
 
     private async Task DesconectarGoogle()

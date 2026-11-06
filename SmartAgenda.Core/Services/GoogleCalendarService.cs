@@ -4,6 +4,8 @@ using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using SmartAgenda.Models;
 
 namespace SmartAgenda.Services;
@@ -23,9 +25,9 @@ public class GoogleCalendarService
     private GoogleAuthorizationCodeFlow? _flujo;
     private CalendarService? _servicio;
 
-    public GoogleCalendarService(IWebHostEnvironment env, IConfiguration config, ILogger<GoogleCalendarService> logger)
+    public GoogleCalendarService(IRutasApp rutas, IConfiguration config, ILogger<GoogleCalendarService> logger)
     {
-        var dataDir = Path.Combine(env.ContentRootPath, "Data");
+        var dataDir = rutas.CarpetaDatos;
         Directory.CreateDirectory(dataDir);
         _credencialesPath = config["GoogleCalendar:CredentialsPath"]
             ?? Path.Combine(dataDir, "credentials.json");
