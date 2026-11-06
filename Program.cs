@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using SmartAgenda.Components;
 using SmartAgenda.Services;
+using SmartAgenda.Services.Sincronizacion;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,6 +62,8 @@ builder.Services.AddScoped<IConexionGoogle, ConexionGoogleWeb>();
 builder.Services.AddSingleton<TareaStorageService>();
 builder.Services.AddSingleton<ParserLenguajeNaturalService>();
 builder.Services.AddSingleton<GoogleCalendarService>();
+builder.Services.AddSingleton<ICalendarioRemoto>(sp => sp.GetRequiredService<GoogleCalendarService>());
+builder.Services.AddSingleton<SincronizacionService>();
 builder.Services.AddSingleton<DeteccionVozService>();
 builder.Services.Configure<OpcionesVoz>(builder.Configuration.GetSection(OpcionesVoz.Seccion));
 builder.Services.AddSingleton<TranscripcionAudioService>();
@@ -207,6 +210,10 @@ app.MapGet(GoogleCalendarService.RutaCallback, async (HttpContext ctx, GoogleCal
         return Results.Redirect("/?google=error");
     }
 });
+
+// Sincroniza con Google Calendar cada 5 minutos (y además tras cada cambio hecho aquí).
+app.Lifetime.ApplicationStarted.Register(() =>
+    app.Services.GetRequiredService<SincronizacionService>().IniciarPeriodica(TimeSpan.FromMinutes(5)));
 
 // El modelo de voz se descarga y carga en segundo plano nada más arrancar, sin retrasar el inicio.
 app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>

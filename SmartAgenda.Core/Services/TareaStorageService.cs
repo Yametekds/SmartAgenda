@@ -36,12 +36,15 @@ public class TareaStorageService
 
     private string RutaFecha(DateOnly fecha) => Path.Combine(_dataDir, $"{fecha:yyyy-MM-dd}.json");
 
+    /// <summary>Las tareas visibles de un día (sin las borradas que aún esperan a llegar a Google).</summary>
     public async Task<List<TareaItem>> ObtenerTareasAsync(DateOnly fecha)
     {
         await _lock.WaitAsync();
         try
         {
-            return await LeerAsync<List<TareaItem>>(RutaFecha(fecha)) ?? new List<TareaItem>();
+            var tareas = await LeerAsync<List<TareaItem>>(RutaFecha(fecha)) ?? new List<TareaItem>();
+            tareas.RemoveAll(t => t.Eliminada);
+            return tareas;
         }
         finally
         {
@@ -61,18 +64,118 @@ public class TareaStorageService
         return resultado;
     }
 
-    public Task AgregarTareaAsync(DateOnly fecha, TareaItem tarea) =>
-        ModificarDiaAsync(fecha, tareas => tareas.Add(tarea));
+    // Los cambios hechos por el usuario quedan marcados como pendientes de enviar a Google y con
+    // la hora del cambio, para que la sincronización sepa qué versión es la más reciente.
+    private static void MarcarCambioLocal(TareaItem tarea)
+    {
+        tarea.ModificadaEn = DateTime.UtcNow;
+        tarea.PendienteSync = true;
+    }
 
-    public Task ActualizarTareaAsync(DateOnly fecha, TareaItem tarea) =>
-        ModificarDiaAsync(fecha, tareas =>
+    public Task AgregarTareaAsync(DateOnly fecha, TareaItem tarea)
+    {
+        MarcarCambioLocal(tarea);
+        return ModificarDiaAsync(fecha, tareas => tareas.Add(tarea));
+    }
+
+    public Task ActualizarTareaAsync(DateOnly fecha, TareaItem tarea)
+    {
+        MarcarCambioLocal(tarea);
+        return ModificarDiaAsync(fecha, tareas =>
         {
             var idx = tareas.FindIndex(t => t.Id == tarea.Id);
             if (idx >= 0) tareas[idx] = tarea;
         });
+    }
 
+    /// <summary>
+    /// Borra la tarea. Si ya estaba en Google, se queda marcada como borrada hasta que la
+    /// sincronización borre también el evento; si no, se quita directamente.
+    /// </summary>
     public Task EliminarTareaAsync(DateOnly fecha, Guid id) =>
+        ModificarDiaAsync(fecha, tareas =>
+        {
+            var tarea = tareas.FirstOrDefault(t => t.Id == id);
+            if (tarea is null) return;
+
+            if (string.IsNullOrEmpty(tarea.GoogleEventId))
+            {
+                tareas.Remove(tarea);
+                return;
+            }
+
+            tarea.Eliminada = true;
+            MarcarCambioLocal(tarea);
+        });
+
+    /// <summary>Quita la tarea del todo (cuando Google ya confirmó el borrado).</summary>
+    public Task PurgarTareaAsync(DateOnly fecha, Guid id) =>
         ModificarDiaAsync(fecha, tareas => tareas.RemoveAll(t => t.Id == id));
+
+    /// <summary>
+    /// Anota que la tarea ya está en Google con <paramref name="googleEventId"/>. Solo la da por
+    /// sincronizada si no ha vuelto a cambiar mientras se enviaba (<paramref name="modificadaEnEnviada"/>).
+    /// </summary>
+    public Task MarcarSincronizadaAsync(DateOnly fecha, Guid id, string googleEventId, DateTime modificadaEnEnviada) =>
+        ModificarDiaAsync(fecha, tareas =>
+        {
+            var tarea = tareas.FirstOrDefault(t => t.Id == id);
+            if (tarea is null) return;
+
+            tarea.GoogleEventId = googleEventId;
+            if (tarea.ModificadaEn == modificadaEnEnviada) tarea.PendienteSync = false;
+        });
+
+    /// <summary>
+    /// Guarda una tarea tal como llega de la sincronización, sin marcarla como cambio local. Si
+    /// cambió de día, la pasa de <paramref name="fechaAnterior"/> a <c>tarea.Fecha</c>.
+    /// </summary>
+    public async Task GuardarDesdeSincronizacionAsync(TareaItem tarea, DateOnly? fechaAnterior)
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            if (fechaAnterior is { } anterior && anterior != tarea.Fecha)
+            {
+                var origen = await LeerAsync<List<TareaItem>>(RutaFecha(anterior)) ?? new List<TareaItem>();
+                origen.RemoveAll(t => t.Id == tarea.Id);
+                await EscribirAsync(RutaFecha(anterior), origen);
+            }
+
+            var destino = await LeerAsync<List<TareaItem>>(RutaFecha(tarea.Fecha)) ?? new List<TareaItem>();
+            var idx = destino.FindIndex(t => t.Id == tarea.Id);
+            if (idx >= 0) destino[idx] = tarea; else destino.Add(tarea);
+            await EscribirAsync(RutaFecha(tarea.Fecha), destino);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>Todas las tareas guardadas, incluidas las borradas pendientes de llegar a Google.</summary>
+    public async Task<List<TareaItem>> ObtenerTodasAsync()
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            var todas = new List<TareaItem>();
+            foreach (var ruta in Directory.EnumerateFiles(_dataDir, "????-??-??.json"))
+            {
+                if (!DateOnly.TryParseExact(Path.GetFileNameWithoutExtension(ruta), "yyyy-MM-dd", out var fecha)) continue;
+                foreach (var tarea in await LeerAsync<List<TareaItem>>(ruta) ?? new List<TareaItem>())
+                {
+                    tarea.Fecha = fecha;
+                    todas.Add(tarea);
+                }
+            }
+            return todas;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
 
     /// <summary>
     /// Pasa la tarea de <paramref name="fechaOrigen"/> a <c>tarea.Fecha</c> en una sola operación, para
@@ -80,6 +183,7 @@ public class TareaStorageService
     /// </summary>
     public async Task MoverTareaAsync(DateOnly fechaOrigen, TareaItem tarea)
     {
+        MarcarCambioLocal(tarea);
         if (fechaOrigen == tarea.Fecha)
         {
             await ActualizarTareaAsync(fechaOrigen, tarea);

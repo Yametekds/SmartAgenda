@@ -1,11 +1,13 @@
 @page "/"
 @implements IDisposable
 @using System.Globalization
+@using SmartAgenda.Services.Sincronizacion
 @inject TareaStorageService Storage
 @inject GoogleCalendarService GoogleCalendar
 @inject LocalizationService L
 @inject NavigationManager Navigation
 @inject IConexionGoogle ConexionGoogle
+@inject SincronizacionService Sync
 
 <PageTitle>Smart Agenda</PageTitle>
 
@@ -36,7 +38,7 @@
 }
 
 <BarraGoogle Conectando="conectando" Importando="sincronizandoDesdeGoogle"
-             OnConectar="ConectarGoogle" OnImportar="SincronizarDesdeGoogle" OnDesconectar="DesconectarGoogle" />
+             OnConectar="ConectarGoogle" OnImportar="SincronizarAhora" OnDesconectar="DesconectarGoogle" />
 
 <CabeceraSemana Lunes="semanaActual" Nombre="@nombreSemana" EsSemanaActual="@(semanaActual == LunesDeHoy())"
                 OnAnterior="() => IrASemanaAsync(semanaActual.AddDays(-7))"
@@ -94,6 +96,7 @@
     protected override async Task OnInitializedAsync()
     {
         L.OnCambio += AlCambiarIdioma;
+        Sync.OnCambios += AlSincronizar;
 
         // Vuelta del inicio de sesión de Google en la web (ver /google/callback en Program.cs).
         var consulta = new Uri(Navigation.Uri).Query;
@@ -108,7 +111,17 @@
 
         semanaActual = LunesDeHoy();
         await CargarSemanaAsync();
+
+        // Al abrir la app, trae lo que haya cambiado en otros dispositivos.
+        Sync.SolicitarSincronizacion();
     }
+
+    // La sincronización en segundo plano cambió tareas guardadas: se recarga la semana que se ve.
+    private void AlSincronizar() => InvokeAsync(async () =>
+    {
+        await CargarSemanaAsync();
+        StateHasChanged();
+    });
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -160,7 +173,7 @@
 
     private void MostrarVistaPrevia(List<EventoPropuesto> eventos) => eventosPendientes = eventos;
 
-    /// <summary>Guarda localmente y sincroniza con Google Calendar cada evento ya revisado por el usuario.</summary>
+    /// <summary>Guarda localmente cada evento ya revisado por el usuario y lo envía a Google Calendar si hay conexión.</summary>
     private async Task ConfirmarEventosPendientes()
     {
         if (eventosPendientes.Count == 0) return;
@@ -169,42 +182,25 @@
         try
         {
             var creadas = 0;
-            var sincronizadas = 0;
-            var sinSincronizar = new List<string>();
             DateOnly? primeraFecha = null;
 
             foreach (var ev in eventosPendientes.ToList())
             {
-                var tarea = new TareaItem
+                await Storage.AgregarTareaAsync(ev.Fecha, new TareaItem
                 {
                     Texto = ev.Texto,
                     Hora = ev.Hora,
                     Duracion = ev.Duracion,
                     Fecha = ev.Fecha
-                };
-
-                await Storage.AgregarTareaAsync(ev.Fecha, tarea);
+                });
                 creadas++;
                 primeraFecha ??= ev.Fecha;
-
-                if (GoogleCalendar.EstaConectado)
-                {
-                    try
-                    {
-                        tarea.GoogleEventId = await GoogleCalendar.CrearOActualizarEventoAsync(tarea, ev.Fecha);
-                        await Storage.ActualizarTareaAsync(ev.Fecha, tarea);
-                        sincronizadas++;
-                    }
-                    catch
-                    {
-                        // Se avisa en el resumen final; no se interrumpe la creación del resto. La
-                        // tarea queda guardada en local y se puede reenviar con su botón de sincronizar.
-                        sinSincronizar.Add(tarea.Texto);
-                    }
-                }
             }
 
             eventosPendientes.Clear();
+
+            // Se envían ya (sin esperar a la sincronización periódica) para poder decir si llegaron.
+            var resultado = await Sync.SincronizarAsync();
 
             if (primeraFecha is { } f && (f < semanaActual || f > semanaActual.AddDays(6)))
             {
@@ -215,13 +211,13 @@
                 await CargarSemanaAsync();
             }
 
-            // Si alguno no llegó a Google, el aviso de abajo lo explica; el resumen no lo da por enviado.
-            mensajeEstado = GoogleCalendar.EstaConectado && sincronizadas == creadas
+            var llegaronAGoogle = !resultado.SinConexion && resultado.Error is null && resultado.Errores == 0;
+            mensajeEstado = llegaronAGoogle
                 ? L.Plural("mensaje.eventosCreadosConGoogle", creadas)
                 : L.Plural("mensaje.eventosCreados", creadas);
-            if (sinSincronizar.Count > 0)
+            if (!resultado.SinConexion && !llegaronAGoogle)
             {
-                mensajeEstado += " " + L.T("mensaje.eventosSinSincronizar", string.Join(", ", sinSincronizar));
+                mensajeEstado += " " + L.T("mensaje.pendientesDeEnviar");
             }
         }
         finally
@@ -233,32 +229,27 @@
     private async Task AlternarCompletada(DateOnly fecha, TareaItem tarea)
     {
         await Storage.ActualizarTareaAsync(fecha, tarea);
+        Sync.SolicitarSincronizacion();
     }
 
     private async Task EliminarTarea(DateOnly fecha, TareaItem tarea)
     {
-        if (!string.IsNullOrEmpty(tarea.GoogleEventId) && GoogleCalendar.EstaConectado)
-        {
-            try { await GoogleCalendar.EliminarEventoAsync(tarea.GoogleEventId); }
-            catch { /* si falla la sincronización, igual se borra localmente */ }
-        }
+        // Si ya estaba en Google, la sincronización borra también el evento (ahora o, sin
+        // conexión, en cuanto vuelva).
         await Storage.EliminarTareaAsync(fecha, tarea.Id);
         semana[fecha] = await Storage.ObtenerTareasAsync(fecha);
+        Sync.SolicitarSincronizacion();
     }
 
     private async Task SincronizarTarea(DateOnly fecha, TareaItem tarea)
     {
-        try
-        {
-            var eventId = await GoogleCalendar.CrearOActualizarEventoAsync(tarea, fecha);
-            tarea.GoogleEventId = eventId;
-            await Storage.ActualizarTareaAsync(fecha, tarea);
-            mensajeEstado = L.T("mensaje.tareaSincronizada", tarea.Texto);
-        }
-        catch (Exception ex)
-        {
-            mensajeEstado = L.T("mensaje.errorSincronizar", ex.Message);
-        }
+        var resultado = await Sync.SincronizarAsync();
+        await CargarSemanaAsync();
+
+        var enviada = semana.TryGetValue(fecha, out var lista) && lista.Any(t => t.Id == tarea.Id && !string.IsNullOrEmpty(t.GoogleEventId));
+        mensajeEstado = enviada
+            ? L.T("mensaje.tareaSincronizada", tarea.Texto)
+            : L.T("mensaje.errorSincronizar", resultado.Error ?? L.T("mensaje.pendientesDeEnviar"));
     }
 
     private async Task GuardarEdicion(DateOnly fechaOriginal, EdicionTarea edicion)
@@ -274,20 +265,7 @@
         tarea.Fecha = edicion.Fecha;
 
         await Storage.MoverTareaAsync(fechaOriginal, tarea);
-
-        if (GoogleCalendar.EstaConectado)
-        {
-            try
-            {
-                tarea.GoogleEventId = await GoogleCalendar.CrearOActualizarEventoAsync(tarea, tarea.Fecha);
-                await Storage.ActualizarTareaAsync(edicion.Fecha, tarea);
-            }
-            catch (Exception ex)
-            {
-                mensajeEstado = L.T("mensaje.tareaActualizadaErrorGoogle", ex.Message);
-            }
-        }
-
+        Sync.SolicitarSincronizacion();
         await CargarSemanaAsync();
     }
 
@@ -302,70 +280,35 @@
     private async Task DesconectarGoogle()
     {
         await GoogleCalendar.DesconectarAsync();
+        // Si luego se conecta otra cuenta, se trae su calendario entero, no solo los cambios.
+        Sync.Reiniciar();
         mensajeEstado = L.T("mensaje.desconectadoGoogle");
     }
 
-    private async Task SincronizarDesdeGoogle()
+    /// <summary>Sincroniza ya con Google Calendar en los dos sentidos y resume lo que cambió.</summary>
+    private async Task SincronizarAhora()
     {
         sincronizandoDesdeGoogle = true;
         try
         {
-            var eventos = await GoogleCalendar.ObtenerEventosSemanaAsync(semanaActual);
-
-            var tareasPorEventId = semana
-                .SelectMany(kv => kv.Value.Select(t => (Fecha: kv.Key, Tarea: t)))
-                .Where(x => !string.IsNullOrEmpty(x.Tarea.GoogleEventId))
-                .GroupBy(x => x.Tarea.GoogleEventId!)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            int nuevas = 0, actualizadas = 0, eliminadas = 0;
-            var vistos = new HashSet<string>();
-
-            foreach (var evento in eventos)
-            {
-                if (string.IsNullOrEmpty(evento.Id)) continue;
-                vistos.Add(evento.Id);
-
-                tareasPorEventId.TryGetValue(evento.Id, out var existente);
-                switch (await AplicarEventoDeGoogleAsync(evento, existente.Tarea is null ? null : existente))
-                {
-                    case ResultadoImportacion.Nueva: nuevas++; break;
-                    case ResultadoImportacion.Actualizada: actualizadas++; break;
-                    case ResultadoImportacion.Eliminada: eliminadas++; break;
-                }
-            }
-
-            // Tareas de esta semana que estaban en Google y ya no aparecen en ella: o se borraron
-            // hace tiempo, o se movieron a otra semana. Se pregunta por cada una para distinguirlo.
-            foreach (var (eventId, existente) in tareasPorEventId.Where(kv => !vistos.Contains(kv.Key)))
-            {
-                var evento = await GoogleCalendar.ObtenerEventoAsync(eventId);
-                if (evento is null)
-                {
-                    await Storage.EliminarTareaAsync(existente.Fecha, existente.Tarea.Id);
-                    eliminadas++;
-                    continue;
-                }
-
-                switch (await AplicarEventoDeGoogleAsync(evento, existente))
-                {
-                    case ResultadoImportacion.Actualizada: actualizadas++; break;
-                    case ResultadoImportacion.Eliminada: eliminadas++; break;
-                }
-            }
-
+            var resultado = await Sync.SincronizarAsync();
             await CargarSemanaAsync();
+
+            if (resultado.Error is not null)
+            {
+                mensajeEstado = L.T("mensaje.errorImportarGoogle", resultado.Error);
+                return;
+            }
+
             var partes = new List<string>();
-            if (nuevas > 0) partes.Add(L.Plural("importacion.nuevas", nuevas));
-            if (actualizadas > 0) partes.Add(L.Plural("importacion.actualizadas", actualizadas));
-            if (eliminadas > 0) partes.Add(L.Plural("importacion.eliminadas", eliminadas));
+            if (resultado.Nuevas > 0) partes.Add(L.Plural("importacion.nuevas", resultado.Nuevas));
+            if (resultado.Actualizadas > 0) partes.Add(L.Plural("importacion.actualizadas", resultado.Actualizadas));
+            if (resultado.Eliminadas > 0) partes.Add(L.Plural("importacion.eliminadas", resultado.Eliminadas));
+            if (resultado.Enviadas > 0) partes.Add(L.Plural("importacion.enviadas", resultado.Enviadas));
             mensajeEstado = partes.Count == 0
                 ? L.T("mensaje.importacionSinCambios")
                 : L.T("mensaje.importacion", L.Lista(partes));
-        }
-        catch (Exception ex)
-        {
-            mensajeEstado = L.T("mensaje.errorImportarGoogle", ex.Message);
+            if (resultado.Errores > 0) mensajeEstado += " " + L.T("mensaje.pendientesDeEnviar");
         }
         finally
         {
@@ -373,65 +316,9 @@
         }
     }
 
-    private enum ResultadoImportacion { Ninguno, Nueva, Actualizada, Eliminada }
-
-    /// <summary>Lleva un evento de Google a la tarea local que le corresponde (o crea una nueva).</summary>
-    private async Task<ResultadoImportacion> AplicarEventoDeGoogleAsync(Google.Apis.Calendar.v3.Data.Event evento, (DateOnly Fecha, TareaItem Tarea)? existente)
+    public void Dispose()
     {
-        if (evento.Status == "cancelled")
-        {
-            if (existente is not { } borrada) return ResultadoImportacion.Ninguno;
-            await Storage.EliminarTareaAsync(borrada.Fecha, borrada.Tarea.Id);
-            return ResultadoImportacion.Eliminada;
-        }
-
-        DateOnly fecha;
-        TimeOnly? hora;
-        if (evento.Start?.DateTimeDateTimeOffset is { } inicio)
-        {
-            // Pasado a la hora local de este equipo: un evento creado en otra zona horaria debe
-            // verse a la hora a la que ocurre aquí, no a la de su zona de origen.
-            fecha = DateOnly.FromDateTime(inicio.LocalDateTime);
-            hora = TimeOnly.FromDateTime(inicio.LocalDateTime);
-        }
-        else if (!string.IsNullOrEmpty(evento.Start?.Date) && DateOnly.TryParse(evento.Start.Date, out var fechaSolo))
-        {
-            fecha = fechaSolo;
-            hora = null;
-        }
-        else
-        {
-            return ResultadoImportacion.Ninguno;
-        }
-
-        var texto = string.IsNullOrWhiteSpace(evento.Summary) ? L.T("tarea.sinTitulo") : evento.Summary;
-        TimeSpan? duracion = null;
-        if (evento.Start?.DateTimeDateTimeOffset is { } ini && evento.End?.DateTimeDateTimeOffset is { } fin)
-        {
-            duracion = fin - ini;
-        }
-
-        if (existente is { } conocida)
-        {
-            var tarea = conocida.Tarea;
-            tarea.Texto = texto;
-            tarea.Hora = hora;
-            tarea.Duracion = duracion;
-            tarea.Fecha = fecha;
-            await Storage.MoverTareaAsync(conocida.Fecha, tarea);
-            return ResultadoImportacion.Actualizada;
-        }
-
-        await Storage.AgregarTareaAsync(fecha, new TareaItem
-        {
-            Texto = texto,
-            Hora = hora,
-            Duracion = duracion,
-            Fecha = fecha,
-            GoogleEventId = evento.Id
-        });
-        return ResultadoImportacion.Nueva;
+        L.OnCambio -= AlCambiarIdioma;
+        Sync.OnCambios -= AlSincronizar;
     }
-
-    public void Dispose() => L.OnCambio -= AlCambiarIdioma;
 }

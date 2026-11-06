@@ -145,8 +145,8 @@ public class LocalizationService
         ["boton.conectarGoogle"] = ("Conectar con Google", "Connect with Google"),
         ["boton.conectando"] = ("Conectando...", "Connecting..."),
         ["google.conectado"] = ("Conectado a Google Calendar", "Connected to Google Calendar"),
-        ["boton.importarGoogle"] = ("Importar desde Google", "Import from Google"),
-        ["boton.importando"] = ("Importando...", "Importing..."),
+        ["boton.importarGoogle"] = ("Sincronizar ahora", "Sync now"),
+        ["boton.importando"] = ("Sincronizando...", "Syncing..."),
         ["boton.desconectar"] = ("Desconectar", "Disconnect"),
 
         ["semana.navegacion"] = ("Navegación por semanas", "Week navigation"),
@@ -181,16 +181,10 @@ public class LocalizationService
         ["mensaje.eventosCreadosConGoogle.varios"] = (
             "Se crearon {0} eventos y ya están en Google Calendar.",
             "Created {0} events; they're already in Google Calendar."),
-        ["mensaje.eventosSinSincronizar"] = (
-            "No se pudieron enviar a Google: {0}. Están guardados aquí; usa su botón de sincronizar para reintentarlo.",
-            "Couldn't send to Google: {0}. They're saved here; use their sync button to try again."),
         ["mensaje.tareaSincronizada"] = (
             "'{0}' sincronizada con Google Calendar.",
             "'{0}' synced with Google Calendar."),
         ["mensaje.errorSincronizar"] = ("Error al sincronizar: {0}", "Sync error: {0}"),
-        ["mensaje.tareaActualizadaErrorGoogle"] = (
-            "Tarea actualizada, pero no se pudo sincronizar con Google: {0}",
-            "Task updated, but it couldn't be synced with Google: {0}"),
         ["mensaje.conectadoGoogle"] = ("Conectado a Google Calendar.", "Connected to Google Calendar."),
         ["mensaje.errorConectarGoogle"] = (
             "No se pudo conectar con Google: {0}",
@@ -201,10 +195,15 @@ public class LocalizationService
         ["mensaje.desconectadoGoogle"] = (
             "Se cerró la sesión de Google en esta app.",
             "Signed out of Google in this app."),
-        ["mensaje.importacion"] = ("Importado de Google: {0}.", "Imported from Google: {0}."),
+        ["mensaje.importacion"] = ("Sincronizado con Google: {0}.", "Synced with Google: {0}."),
+        ["importacion.enviadas.uno"] = ("1 cambio enviado", "1 change sent"),
+        ["importacion.enviadas.varios"] = ("{0} cambios enviados", "{0} changes sent"),
+        ["mensaje.pendientesDeEnviar"] = (
+            "Algunos cambios no han llegado a Google todavía; se enviarán solos en cuanto haya conexión.",
+            "Some changes haven't reached Google yet; they'll be sent automatically once you're back online."),
         ["mensaje.importacionSinCambios"] = (
-            "Esta semana ya coincidía con Google Calendar.",
-            "This week already matched Google Calendar."),
+            "Todo estaba ya al día con Google Calendar.",
+            "Everything was already up to date with Google Calendar."),
         ["importacion.nuevas.uno"] = ("1 tarea nueva", "1 new task"),
         ["importacion.nuevas.varios"] = ("{0} tareas nuevas", "{0} new tasks"),
         ["importacion.actualizadas.uno"] = ("1 actualizada", "1 updated"),

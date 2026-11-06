@@ -361,17 +361,26 @@ From then on, daily use is: write or dictate the task → click "Review
 events" → confirm the preview → it's saved in the app and created as an
 event in your Google Calendar, no extra technical steps.
 
-### Edit, delete and import
+### Edit, delete and sync
 
 - **Edit**: every task has an "Edit" button to change its text, day, time
-  or duration. If it's connected to Google, the event is updated too.
-- **Delete**: asks for confirmation, then removes the task locally and, if
-  it was synced, the Google Calendar event too.
-- **Import tasks from Google**: pulls in events already on your Google
-  Calendar for the current week (e.g. ones created directly from your phone
-  or Google's own web UI). Known events are updated (and moved if they
-  changed day), new ones are added as tasks, and tasks whose event was
-  deleted in Google are removed here too.
+  or duration.
+- **Delete**: asks for confirmation, then removes the task here and, if it
+  was synced, the Google Calendar event too.
+- **Automatic sync**: every device keeps its own copy of the tasks and works
+  offline. Google Calendar is the shared copy: the app syncs when it opens,
+  a few seconds after every change, every 5 minutes, and with the
+  "Sync now" button. Changes made offline are sent as soon as there's a
+  connection.
+  - It syncs both ways: new events, edits, moves to another day, completed
+    tasks and deletions, including events created directly in Google
+    Calendar (from 60 days back up to a year ahead).
+  - Each task keeps a fixed id (stored privately in its Google event), so
+    every device recognizes it even if its title changes.
+  - If the same task changes on two devices before syncing, the most
+    recent change wins.
+  - Anything you add to the event from Google Calendar itself (description,
+    guests, reminders) is kept when the app updates it.
 
 > `Data/credentials.json` and `Data/google-token/` contain sensitive
 > account information: never share them or commit them to a public
@@ -392,7 +401,9 @@ The code is split in two projects: `SmartAgenda.Core/` holds everything shared w
 - `SmartAgenda.Core/Services/TareaStorageService.cs` — reads/writes tasks as JSON, one file
   per exact date, plus each week's custom name.
 - `SmartAgenda.Core/Services/GoogleCalendarService.cs` — OAuth2 authentication (browser
-  redirect to `/google/callback`) and event sync with Google Calendar.
+  redirect to `/google/callback`) and reading/writing events in Google Calendar.
+- `SmartAgenda.Core/Services/Sincronizacion/` — two-way sync between this
+  device and Google Calendar (offline queue, deletions, most recent change wins).
 - `Services/AccesoService.cs` — access password for other devices and its
   sign-in page (`/acceso`).
 - `SmartAgenda.Core/Services/DeteccionVozService.cs` — pre-filter that discards audio
