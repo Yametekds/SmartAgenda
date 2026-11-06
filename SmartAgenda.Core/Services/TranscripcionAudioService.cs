@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Whisper.net;
 using Whisper.net.Ggml;
 
@@ -14,7 +16,9 @@ namespace SmartAgenda.Services;
 /// </summary>
 public class TranscripcionAudioService
 {
+    private readonly string _modeloDir;
     private readonly string _modeloPath;
+    private readonly OpcionesVoz _opciones;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly DeteccionVozService _deteccionVoz;
     private readonly ILogger<TranscripcionAudioService> _logger;
@@ -28,16 +32,33 @@ public class TranscripcionAudioService
     // estos casos antes de siquiera llamar a Whisper.
     private static readonly Regex RegexEtiquetaNoHablada = new(@"\[[^\]]{0,60}\]|\([^)]{0,60}\)", RegexOptions.IgnoreCase);
 
-    public TranscripcionAudioService(IWebHostEnvironment env, DeteccionVozService deteccionVoz, ILogger<TranscripcionAudioService> logger)
+    public TranscripcionAudioService(IRutasApp rutas, IOptions<OpcionesVoz> opciones, DeteccionVozService deteccionVoz, ILogger<TranscripcionAudioService> logger)
     {
-        var dir = Path.Combine(env.ContentRootPath, "Data", "modelo-voz");
-        Directory.CreateDirectory(dir);
-        // "small" en vez de "base": más preciso con ruido/música de fondo, a cambio de ser más
-        // lento y pesar más (~466 MB en vez de ~142 MB). Cambia a GgmlType.Base más abajo si
-        // prefieres priorizar velocidad sobre precisión.
-        _modeloPath = Path.Combine(dir, "ggml-small.bin");
+        _modeloDir = Path.Combine(rutas.CarpetaDatos, "modelo-voz");
+        Directory.CreateDirectory(_modeloDir);
+        _opciones = opciones.Value;
+        _modeloPath = Path.Combine(_modeloDir, ModeloVoz.NombreArchivo(_opciones.Modelo, _opciones.Cuantizacion));
         _deteccionVoz = deteccionVoz;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Descarga (si hace falta) y carga el modelo en segundo plano al arrancar, para que el primer
+    /// dictado no tenga que esperar a una descarga de cientos de MB.
+    /// </summary>
+    public async Task PrepararAsync()
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            await AsegurarModeloAsync();
+            _factory ??= WhisperFactory.FromPath(_modeloPath);
+            _logger.LogInformation("Modelo de voz listo: {Modelo}.", Path.GetFileName(_modeloPath));
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task<string> TranscribirAsync(Stream audioWav, string idiomaWhisper = "es")
@@ -75,9 +96,15 @@ public class TranscripcionAudioService
             await AsegurarModeloAsync();
             _factory ??= WhisperFactory.FromPath(_modeloPath);
 
-            using var processor = _factory.CreateBuilder()
-                .WithLanguage(idiomaWhisper is "en" ? "en" : "es")
-                .Build();
+            var idioma = idiomaWhisper is "en" ? "en" : "es";
+            var builder = _factory.CreateBuilder()
+                .WithLanguage(idioma)
+                .WithPrompt(ModeloVoz.ContextoPara(idioma));
+            if (_opciones.Hilos > 0) builder = builder.WithThreads(_opciones.Hilos);
+            builder = _opciones.Decodificacion == EstrategiaDecodificacion.Greedy
+                ? builder.WithGreedySamplingStrategy(_ => { })
+                : builder.WithBeamSearchSamplingStrategy(beam => beam.WithBeamSize(5));
+            using var processor = builder.Build();
 
             var texto = new StringBuilder();
             await foreach (var segmento in processor.ProcessAsync(audioWav))
@@ -87,6 +114,11 @@ public class TranscripcionAudioService
 
             var sinEtiquetas = RegexEtiquetaNoHablada.Replace(texto.ToString(), " ");
             var resultado = Regex.Replace(sinEtiquetas, @"\s+", " ").Trim();
+            if (ModeloVoz.EsEcoDelContexto(resultado, idioma))
+            {
+                _logger.LogInformation("Whisper devolvió el propio contexto (audio sin voz); se descarta.");
+                resultado = string.Empty;
+            }
             _logger.LogInformation("Whisper: texto crudo \"{Crudo}\" -> texto final \"{Final}\"", texto.ToString(), resultado);
             return resultado;
         }
@@ -131,15 +163,47 @@ public class TranscripcionAudioService
     {
         if (File.Exists(_modeloPath)) return;
 
-        // Primera vez: descarga el modelo (~466 MB con "small") una sola vez y lo deja en Data/modelo-voz/.
-        using var httpClient = new HttpClient();
+        // Primera vez: descarga el modelo una sola vez a Data/modelo-voz/, comprobando su huella
+        // SHA-256 antes de darlo por bueno. Si la descarga se corta o llega alterada, no se usa.
+        _logger.LogInformation("Descargando el modelo de voz {Modelo} (~{Mb} MB). Solo ocurre la primera vez.",
+            Path.GetFileName(_modeloPath), ModeloVoz.TamanoMb(_opciones.Modelo, _opciones.Cuantizacion)?.ToString() ?? "?");
+
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         var descargador = new WhisperGgmlDownloader(httpClient);
-        await using var modeloStream = await descargador.GetGgmlModelAsync(GgmlType.Small);
         var temporal = _modeloPath + ".tmp";
-        await using (var archivo = File.Create(temporal))
+        try
         {
-            await modeloStream.CopyToAsync(archivo);
+            await using (var modeloStream = await descargador.GetGgmlModelAsync(_opciones.Modelo, _opciones.Cuantizacion))
+            await using (var archivo = File.Create(temporal))
+            {
+                await ModeloVoz.CopiarVerificandoAsync(modeloStream, archivo, ModeloVoz.Sha256Esperado(_opciones.Modelo, _opciones.Cuantizacion));
+            }
+            File.Move(temporal, _modeloPath, overwrite: true);
         }
-        File.Move(temporal, _modeloPath, overwrite: true);
+        catch
+        {
+            if (File.Exists(temporal)) File.Delete(temporal);
+            throw;
+        }
+
+        BorrarModelosAnteriores();
+    }
+
+    /// <summary>Libera espacio: borra los modelos de voz de versiones anteriores que ya no se usan.</summary>
+    private void BorrarModelosAnteriores()
+    {
+        foreach (var archivo in Directory.EnumerateFiles(_modeloDir, "ggml-*.bin"))
+        {
+            if (string.Equals(archivo, _modeloPath, StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                File.Delete(archivo);
+                _logger.LogInformation("Modelo de voz anterior borrado: {Archivo}.", Path.GetFileName(archivo));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo borrar el modelo de voz anterior {Archivo}.", Path.GetFileName(archivo));
+            }
+        }
     }
 }

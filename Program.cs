@@ -56,10 +56,13 @@ if (certificadoHttps is not null)
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Services.AddSingleton<IRutasApp, RutasWeb>();
+builder.Services.AddScoped<IConexionGoogle, ConexionGoogleWeb>();
 builder.Services.AddSingleton<TareaStorageService>();
 builder.Services.AddSingleton<ParserLenguajeNaturalService>();
 builder.Services.AddSingleton<GoogleCalendarService>();
 builder.Services.AddSingleton<DeteccionVozService>();
+builder.Services.Configure<OpcionesVoz>(builder.Configuration.GetSection(OpcionesVoz.Seccion));
 builder.Services.AddSingleton<TranscripcionAudioService>();
 builder.Services.AddScoped<LocalizationService>();
 builder.Services.AddSingleton<AccesoService>();
@@ -134,10 +137,9 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(SmartAgenda.Components.Pages.Home).Assembly);
 
-// Recibe un audio WAV grabado en el navegador y devuelve el texto transcrito con Whisper,
-// ejecutado localmente en este servidor (sin API key ni servicios externos de pago).
 static bool PrefiereIngles(HttpRequest request) =>
     !request.Headers.AcceptLanguage.ToString().TrimStart().StartsWith("es", StringComparison.OrdinalIgnoreCase);
 
@@ -206,30 +208,17 @@ app.MapGet(GoogleCalendarService.RutaCallback, async (HttpContext ctx, GoogleCal
     }
 });
 
-app.MapPost("/api/transcribir", async (HttpRequest request, TranscripcionAudioService transcripcion, ILogger<Program> logger) =>
+// El modelo de voz se descarga y carga en segundo plano nada más arrancar, sin retrasar el inicio.
+app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
 {
-    using var buffer = new MemoryStream();
-    await request.Body.CopyToAsync(buffer);
-    buffer.Position = 0;
-
-    if (buffer.Length == 0)
-    {
-        return Results.BadRequest(new { error = "No se recibió audio." });
-    }
-
-    var idioma = request.Query["idioma"].ToString();
-
     try
     {
-        var texto = await transcripcion.TranscribirAsync(buffer, idioma);
-        return Results.Ok(new { texto });
+        await app.Services.GetRequiredService<TranscripcionAudioService>().PrepararAsync();
     }
     catch (Exception ex)
     {
-        // El detalle se queda en el log del servidor; al navegador solo le llega que falló.
-        logger.LogError(ex, "Error al transcribir el audio.");
-        return Results.Problem("No se pudo transcribir el audio.");
+        app.Logger.LogWarning(ex, "No se pudo preparar el modelo de voz al arrancar; se reintentará en el primer dictado.");
     }
-});
+}));
 
 app.Run();

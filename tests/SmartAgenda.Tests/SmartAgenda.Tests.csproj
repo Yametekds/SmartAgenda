@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\SmartAgenda.csproj" />
+    <ProjectReference Include="..\..\SmartAgenda.Core\SmartAgenda.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

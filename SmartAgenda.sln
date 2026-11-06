@@ -9,6 +9,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAgenda.Tests", "tests\SmartAgenda.Tests\SmartAgenda.Tests.csproj", "{DD689E53-03A3-43F8-A3C2-5839EADA18A4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartAgenda.Core", "SmartAgenda.Core\SmartAgenda.Core.csproj", "{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -43,6 +45,18 @@ Global
 		{DD689E53-03A3-43F8-A3C2-5839EADA18A4}.Release|x64.Build.0 = Release|Any CPU
 		{DD689E53-03A3-43F8-A3C2-5839EADA18A4}.Release|x86.ActiveCfg = Release|Any CPU
 		{DD689E53-03A3-43F8-A3C2-5839EADA18A4}.Release|x86.Build.0 = Release|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Debug|x64.Build.0 = Debug|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Debug|x86.Build.0 = Debug|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Release|x64.ActiveCfg = Release|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Release|x64.Build.0 = Release|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Release|x86.ActiveCfg = Release|Any CPU
+		{D0EC168A-9665-4FBC-BA95-0F129B83A5D1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
