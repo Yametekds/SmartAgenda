@@ -39,6 +39,16 @@ public class GoogleCalendarService : ICalendarioRemoto
     /// <summary>Hay un credentials.json propio del proyecto (requisito técnico de Google, se crea una sola vez).</summary>
     public bool EstaConfigurado => File.Exists(_credencialesPath);
 
+    /// <summary>Dónde se guarda el archivo de credenciales de Google.</summary>
+    public string RutaCredenciales => _credencialesPath;
+
+    /// <summary>Hay que volver a leer las credenciales (se acaban de sustituir).</summary>
+    public void OlvidarCredenciales()
+    {
+        _flujo = null;
+        _servicio = null;
+    }
+
     /// <summary>Ya se completó el inicio de sesión con Google y hay un token utilizable guardado localmente.</summary>
     public bool EstaConectado => _servicio != null || Directory.Exists(_tokenStorePath) && Directory.EnumerateFiles(_tokenStorePath).Any();
 

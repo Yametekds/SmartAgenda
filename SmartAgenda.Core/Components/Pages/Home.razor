@@ -274,7 +274,26 @@
         // Cada plataforma inicia sesión a su manera (ver IConexionGoogle): en la web se sale a la
         // página de Google y se vuelve a /google/callback, que deja el token guardado.
         conectando = true;
-        await ConexionGoogle.IniciarAsync();
+        try
+        {
+            await ConexionGoogle.IniciarAsync();
+        }
+        catch (Exception ex)
+        {
+            mensajeEstado = L.T("mensaje.errorImportarGoogle", ex.Message);
+        }
+        finally
+        {
+            conectando = false;
+        }
+
+        // En el móvil el inicio de sesión vuelve aquí al terminar: se trae ya el calendario entero.
+        if (GoogleCalendar.EstaConectado)
+        {
+            mensajeEstado = L.T("mensaje.conectadoGoogle");
+            Sync.Reiniciar();
+            await SincronizarAhora();
+        }
     }
 
     private async Task DesconectarGoogle()
