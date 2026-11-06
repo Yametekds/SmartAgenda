@@ -60,6 +60,7 @@ builder.Services.AddSingleton<TareaStorageService>();
 builder.Services.AddSingleton<ParserLenguajeNaturalService>();
 builder.Services.AddSingleton<GoogleCalendarService>();
 builder.Services.AddSingleton<DeteccionVozService>();
+builder.Services.Configure<OpcionesVoz>(builder.Configuration.GetSection(OpcionesVoz.Seccion));
 builder.Services.AddSingleton<TranscripcionAudioService>();
 builder.Services.AddScoped<LocalizationService>();
 builder.Services.AddSingleton<AccesoService>();
@@ -231,5 +232,18 @@ app.MapPost("/api/transcribir", async (HttpRequest request, TranscripcionAudioSe
         return Results.Problem("No se pudo transcribir el audio.");
     }
 });
+
+// El modelo de voz se descarga y carga en segundo plano nada más arrancar, sin retrasar el inicio.
+app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+{
+    try
+    {
+        await app.Services.GetRequiredService<TranscripcionAudioService>().PrepararAsync();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "No se pudo preparar el modelo de voz al arrancar; se reintentará en el primer dictado.");
+    }
+}));
 
 app.Run();
