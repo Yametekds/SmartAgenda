@@ -14,3 +14,7 @@ tests/**/bin/
 tests/**/obj/
 Data/acceso.pwd
 Data/claves-proteccion/
+
+# Clave de firma de la app Android
+*.keystore
+*.jks

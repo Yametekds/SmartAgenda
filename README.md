@@ -194,6 +194,47 @@ or sent to Google Calendar until you click **"Confirm and create"**.
 Tasks are stored as one JSON file per exact date inside `Data/tareas/`, so
 every week — past or future — is independent.
 
+## Android app
+
+`SmartAgenda.Movil/` is an Android app built with .NET MAUI Blazor Hybrid. It
+uses the same components and services as the web version, but runs entirely
+on the phone: no server, no Tailscale and no password. It works offline and
+syncs with your other devices through Google Calendar.
+
+**Install it**
+
+1. Open the latest run of the **CI** workflow in the repository's *Actions*
+   tab and download the `SmartAgenda-android` artifact.
+2. Unzip it, copy the `.apk` to your phone and open it (Android will ask you
+   to allow installing apps from that source).
+
+**Connect Google Calendar on the phone**
+
+1. In your Google Cloud credential (the same one you use on the PC), add
+   `http://localhost:53682/` as an authorized redirect URI. If you prefer,
+   create a "Desktop app" credential instead, which needs no redirect URI.
+2. Copy its `credentials.json` to the phone, tap **Pick credentials.json** in
+   the app and then **Connect with Google**. The phone's browser opens; after
+   granting access, go back to the app and it will sync your calendar.
+
+**Voice**: the model (~574 MB) downloads automatically over Wi-Fi the first
+time the app opens (or the first time you dictate, if you're on mobile data).
+Transcription happens on the phone itself.
+
+**Updates without losing data**: Android only installs a new version over the
+old one if both are signed with the same key. To have CI always sign with
+yours, create a key once:
+
+```bash
+keytool -genkeypair -v -keystore smartagenda.keystore -alias smartagenda -keyalg RSA -keysize 2048 -validity 10000
+```
+
+and add these secrets to the repository (*Settings → Secrets and variables →
+Actions*): `ANDROID_KEYSTORE_BASE64` (the file in base64, e.g.
+`base64 -w0 smartagenda.keystore`), `ANDROID_KEY_ALIAS` (`smartagenda`),
+`ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD`. Keep the keystore
+file safe and out of the repository.
+
 ## Remote & mobile access
 
 The app always runs on one machine; your phone (or any other device) just
