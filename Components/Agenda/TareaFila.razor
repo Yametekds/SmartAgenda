@@ -1,0 +1,107 @@
+@inject LocalizationService L
+
+<li class="tarea @(Tarea.Completada ? "hecha" : "") @(editando ? "editando" : "") @(confirmandoBorrado ? "confirmando" : "")" style="--i:@Indice">
+    @if (editando)
+    {
+        <div class="tarea-edicion">
+            <input class="campo campo-sm" @bind="edTexto" placeholder="@L.T("edicion.descripcionPlaceholder")" aria-label="@L.T("edicion.descripcionPlaceholder")" />
+            <div class="tarea-edicion-fila">
+                <input type="date" class="campo campo-sm" @bind="edFecha" aria-label="@L.T("campo.fecha")" />
+                <input type="time" class="campo campo-sm" @bind="edHora" aria-label="@L.T("campo.hora")" />
+                <label class="campo-duracion" title="@L.T("edicion.duracionTitle")">
+                    <input type="number" min="0" class="campo campo-sm" @bind="edDuracionMinutos" aria-label="@L.T("edicion.duracionTitle")" />
+                    <span>min</span>
+                </label>
+            </div>
+            <div class="acciones">
+                <button class="btn btn-primario btn-compacto" type="button" @onclick="Guardar">@L.T("boton.guardar")</button>
+                <button class="btn btn-texto btn-compacto" type="button" @onclick="() => editando = false">@L.T("boton.cancelar")</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <label class="tarea-check">
+            <input type="checkbox" class="oculto-accesible" checked="@Tarea.Completada" @onchange="Alternar" />
+            <span class="tarea-casilla" aria-hidden="true"><Icono Nombre="check" Tamano="12" /></span>
+        </label>
+        <div class="tarea-cuerpo">
+            <span class="tarea-hora @(Tarea.Hora is null ? "sin-hora" : "")">
+                @(Tarea.Hora is { } h ? h.ToString("HH:mm") : L.T("tarea.sinHora"))
+                @if (Tarea.Duracion is { } d && d.TotalMinutes > 0)
+                {
+                    <span class="tarea-duracion">@((int)d.TotalMinutes) min</span>
+                }
+            </span>
+            <span class="tarea-texto">@Tarea.Texto</span>
+            @if (!string.IsNullOrEmpty(Tarea.GoogleEventId))
+            {
+                <span class="insignia-google" title="@L.T("tarea.insigniaGoogleTitle")">G</span>
+            }
+        </div>
+        <div class="tarea-acciones">
+            @if (confirmandoBorrado)
+            {
+                <button class="btn btn-peligro btn-mini" type="button" @onclick="() => OnEliminar.InvokeAsync(Tarea)">@L.T("tarea.confirmarEliminar")</button>
+                <button class="btn btn-texto btn-mini" type="button" @onclick="() => confirmandoBorrado = false">@L.T("boton.cancelar")</button>
+            }
+            else
+            {
+                <button class="btn-icono btn-icono-sm" type="button" title="@L.T("tarea.editarTitle")" aria-label="@L.T("tarea.editarTitle")" @onclick="EmpezarEdicion">
+                    <Icono Nombre="editar" Tamano="15" />
+                </button>
+                @if (GoogleConectado)
+                {
+                    var titulo = Tarea.GoogleEventId is null ? L.T("tarea.enviarGoogleTitle") : L.T("tarea.actualizarGoogleTitle");
+                    <button class="btn-icono btn-icono-sm @(Tarea.GoogleEventId is null ? "" : "sincronizado")" type="button"
+                            title="@titulo" aria-label="@titulo" @onclick="() => OnSincronizar.InvokeAsync(Tarea)">
+                        <Icono Nombre="nube" Tamano="15" />
+                    </button>
+                }
+                <button class="btn-icono btn-icono-sm btn-icono-peligro" type="button" title="@L.T("tarea.eliminarTitle")" aria-label="@L.T("tarea.eliminarTitle")"
+                        @onclick="() => confirmandoBorrado = true">
+                    <Icono Nombre="borrar" Tamano="15" />
+                </button>
+            }
+        </div>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public TareaItem Tarea { get; set; } = default!;
+    [Parameter] public DateOnly Fecha { get; set; }
+    [Parameter] public int Indice { get; set; }
+    [Parameter] public bool GoogleConectado { get; set; }
+    [Parameter] public EventCallback<TareaItem> OnAlternar { get; set; }
+    [Parameter] public EventCallback<EdicionTarea> OnGuardar { get; set; }
+    [Parameter] public EventCallback<TareaItem> OnEliminar { get; set; }
+    [Parameter] public EventCallback<TareaItem> OnSincronizar { get; set; }
+
+    private bool editando;
+    private bool confirmandoBorrado;
+    private string edTexto = string.Empty;
+    private DateOnly edFecha;
+    private TimeOnly? edHora;
+    private int edDuracionMinutos;
+
+    private void EmpezarEdicion()
+    {
+        edTexto = Tarea.Texto;
+        edFecha = Fecha;
+        edHora = Tarea.Hora;
+        edDuracionMinutos = (int)(Tarea.Duracion?.TotalMinutes ?? 0);
+        editando = true;
+    }
+
+    private async Task Guardar()
+    {
+        editando = false;
+        await OnGuardar.InvokeAsync(new EdicionTarea(Tarea.Id, edTexto, edFecha, edHora, edDuracionMinutos));
+    }
+
+    private async Task Alternar(ChangeEventArgs e)
+    {
+        Tarea.Completada = e.Value is bool b && b;
+        await OnAlternar.InvokeAsync(Tarea);
+    }
+}

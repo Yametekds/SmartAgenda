@@ -1,0 +1,215 @@
+.tarea {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: start;
+    gap: 0.6rem;
+    padding: 0.45rem 0.35rem;
+    border-radius: var(--radius-md);
+    transition: background-color var(--t-rapido) var(--ease-suave);
+}
+
+.tarea:hover,
+.tarea:focus-within {
+    background: var(--color-surface);
+}
+
+.tarea.editando {
+    display: block;
+    padding: 0.6rem;
+    background: var(--color-surface);
+}
+
+/* --- Casilla --- */
+
+.tarea-check {
+    position: relative;
+    display: inline-flex;
+    padding-top: 0.1rem;
+    cursor: pointer;
+}
+
+.tarea-casilla {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    border: 1.5px solid var(--color-text-tenue);
+    border-radius: 3px;
+    color: #fff;
+    transition: background-color var(--t-rapido) var(--ease-suave),
+                border-color var(--t-rapido) var(--ease-suave);
+}
+
+.tarea-casilla ::deep .icono {
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity var(--t-rapido) var(--ease-suave),
+                transform var(--t-medio) var(--ease-salida);
+}
+
+.tarea-check:hover .tarea-casilla {
+    border-color: var(--color-accent);
+}
+
+.tarea-check input:checked + .tarea-casilla {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+}
+
+.tarea-check input:checked + .tarea-casilla ::deep .icono {
+    opacity: 1;
+    transform: none;
+}
+
+.tarea-check input:focus-visible + .tarea-casilla {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+/* --- Texto --- */
+
+.tarea-cuerpo {
+    min-width: 0;
+    font-size: 0.9rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    transition: opacity var(--t-medio) var(--ease-suave);
+}
+
+.tarea-hora {
+    display: block;
+    color: var(--color-accent);
+    font-size: 0.75rem;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.tarea-hora.sin-hora {
+    color: var(--color-text-tenue);
+    font-weight: 500;
+}
+
+.tarea-duracion {
+    margin-left: 0.3rem;
+    color: var(--color-text-tenue);
+    font-weight: 500;
+}
+
+.tarea.hecha .tarea-cuerpo {
+    opacity: 0.45;
+}
+
+.tarea.hecha .tarea-texto {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+.insignia-google {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.95rem;
+    height: 0.95rem;
+    margin-left: 0.3rem;
+    border: 1px solid var(--color-text-tenue);
+    border-radius: 3px;
+    color: var(--color-text-muted);
+    font-size: 0.55rem;
+    font-weight: 800;
+    vertical-align: 0.1em;
+}
+
+/* --- Acciones --- */
+
+.tarea-acciones {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    margin: -0.25rem -0.15rem 0 0;
+}
+
+/* Con ratón, las acciones aparecen al pasar por encima (o al enfocar con teclado) sin mover
+   el texto; en pantallas táctiles quedan siempre visibles. */
+@media (hover: hover) and (pointer: fine) {
+    .tarea-acciones {
+        opacity: 0;
+        transition: opacity var(--t-rapido) var(--ease-suave);
+    }
+
+    .tarea:hover .tarea-acciones,
+    .tarea:focus-within .tarea-acciones,
+    .tarea.confirmando .tarea-acciones {
+        opacity: 1;
+    }
+}
+
+@media (min-width: 1024px) {
+    .tarea {
+        grid-template-columns: auto 1fr;
+        gap: 0.5rem;
+    }
+
+    .tarea-acciones {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
+        margin: -0.2rem 0 -0.15rem;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+        /* En columnas estrechas las acciones flotan sobre la esquina para no ocupar una fila. */
+        .tarea-acciones {
+            position: absolute;
+            top: 0.2rem;
+            right: 0.2rem;
+            margin: 0;
+            padding-left: 0.75rem;
+            height: 1.45rem;
+            border-radius: var(--radius-md);
+            background: var(--color-surface);
+            box-shadow: -10px 0 10px -4px var(--color-surface);
+        }
+
+        .tarea-acciones ::deep .btn-icono-sm,
+        .tarea-acciones .btn-icono-sm {
+            width: 1.45rem;
+            height: 1.45rem;
+        }
+
+        .tarea.confirmando .tarea-acciones {
+            height: auto;
+            flex-wrap: wrap;
+            justify-content: flex-start;
+            position: static;
+            grid-column: 1 / -1;
+            margin-top: 0.2rem;
+            padding: 0;
+            box-shadow: none;
+        }
+    }
+}
+
+/* --- Edición --- */
+
+.tarea-edicion {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    animation: entrar var(--t-medio) var(--ease-salida) both;
+}
+
+.tarea-edicion-fila {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.tarea-edicion-fila > .campo {
+    flex: 1 1 8rem;
+}
+
+.tarea-edicion .acciones {
+    margin-top: 0.15rem;
+}
