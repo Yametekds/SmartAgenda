@@ -202,6 +202,49 @@ envía a Google Calendar hasta pulsar **"Confirmar y crear"**.
 Cada tarea se guarda en un archivo independiente por fecha dentro de
 `Data/tareas/`, así que cada semana —pasada o futura— es independiente.
 
+## App Android
+
+`SmartAgenda.Movil/` es una app Android hecha con .NET MAUI Blazor Hybrid.
+Usa los mismos componentes y servicios que la versión web, pero funciona
+entera en el móvil: sin servidor, sin Tailscale y sin contraseña. Funciona sin
+conexión y se sincroniza con tus otros dispositivos a través de Google
+Calendar.
+
+**Instalarla**
+
+1. Abre la última ejecución del workflow **CI** en la pestaña *Actions* del
+   repositorio y descarga el artefacto `SmartAgenda-android`.
+2. Descomprímelo, pasa el `.apk` al móvil y ábrelo (Android te pedirá permitir
+   instalar apps desde ese origen).
+
+**Conectar Google Calendar en el móvil**
+
+1. En tu credencial de Google Cloud (la misma que usas en el PC), añade
+   `http://localhost:53682/` como URI de redirección autorizada. Si lo
+   prefieres, crea una credencial de tipo "App de escritorio", que no necesita
+   ninguna URI.
+2. Pasa su `credentials.json` al móvil, pulsa **Elegir credentials.json** en la
+   app y después **Conectar con Google**. Se abre el navegador del móvil; tras
+   dar permiso, vuelve a la app y sincronizará tu calendario.
+
+**Voz**: el modelo (~574 MB) se descarga solo con Wi-Fi la primera vez que se
+abre la app (o la primera vez que dictes, si estás con datos móviles). La
+transcripción se hace en el propio móvil.
+
+**Actualizar sin perder datos**: Android solo instala una versión nueva encima
+de la anterior si las dos están firmadas con la misma clave. Para que el CI
+firme siempre con la tuya, crea una clave una vez:
+
+```bash
+keytool -genkeypair -v -keystore smartagenda.keystore -alias smartagenda -keyalg RSA -keysize 2048 -validity 10000
+```
+
+y añade estos secretos al repositorio (*Settings → Secrets and variables →
+Actions*): `ANDROID_KEYSTORE_BASE64` (el archivo en base64, por ejemplo
+`base64 -w0 smartagenda.keystore`), `ANDROID_KEY_ALIAS` (`smartagenda`),
+`ANDROID_KEYSTORE_PASSWORD` y `ANDROID_KEY_PASSWORD`. Guarda el archivo de la
+clave en un sitio seguro y fuera del repositorio.
+
 ## Acceso remoto y móvil
 
 La app siempre corre en una sola máquina; tu móvil (o cualquier otro

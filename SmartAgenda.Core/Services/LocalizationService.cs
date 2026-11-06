@@ -139,6 +139,13 @@ public class LocalizationService
         ["google.noConfigurado"] = (
             "Google Calendar no está configurado. Las tareas se guardan aquí igualmente; para enviarlas a tu calendario, sigue «Conectar con Google Calendar» en el README.",
             "Google Calendar isn't set up. Tasks are still saved here; to send them to your calendar, follow \"Google Calendar setup\" in the README."),
+        ["google.noConfiguradoMovil"] = (
+            "Google Calendar no está configurado. Las tareas se guardan aquí igualmente; para sincronizarlas, elige el archivo credentials.json de tu proyecto de Google (ver README).",
+            "Google Calendar isn't set up. Tasks are still saved here; to sync them, pick the credentials.json file from your Google project (see README)."),
+        ["boton.elegirCredenciales"] = ("Elegir credentials.json", "Pick credentials.json"),
+        ["mensaje.credencialesNoValidas"] = (
+            "Ese archivo no parece un credentials.json de Google. Descárgalo de nuevo desde Google Cloud Console.",
+            "That file doesn't look like a Google credentials.json. Download it again from Google Cloud Console."),
         ["google.noConectado"] = (
             "Conecta tu cuenta de Google para que las tareas se envíen a tu calendario automáticamente.",
             "Connect your Google account so tasks are sent to your calendar automatically."),
