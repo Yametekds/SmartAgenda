@@ -1,4 +1,4 @@
-using Microsoft.JSInterop;
+﻿using Microsoft.JSInterop;
 using SmartAgenda.Models;
 
 namespace SmartAgenda.Services;
@@ -79,60 +79,80 @@ public class LocalizationService
         return args.Length == 0 ? plantilla : string.Format(plantilla, args);
     }
 
+    /// <summary>
+    /// Elige entre "clave.uno" y "clave.varios" según la cantidad, para no escribir "evento(s)".
+    /// La cantidad se pasa como {0}; los argumentos extra siguen a partir de {1}.
+    /// </summary>
+    public string Plural(string clave, int cantidad, params object[] args) =>
+        T(cantidad == 1 ? clave + ".uno" : clave + ".varios", [cantidad, .. args]);
+
+    /// <summary>Une varias partes como en una frase: "a, b y c" / "a, b and c".</summary>
+    public string Lista(IReadOnlyList<string> partes)
+    {
+        if (partes.Count <= 1) return partes.Count == 0 ? string.Empty : partes[0];
+        var y = Actual == Idioma.En ? " and " : " y ";
+        return string.Join(", ", partes.Take(partes.Count - 1)) + y + partes[^1];
+    }
+
     private static readonly Dictionary<string, (string Es, string En)> Textos = new()
     {
-        ["hero.tituloPrefijo"] = ("Mis tareas", "My"),
-        ["hero.tituloAcento"] = ("de la semana", "weekly tasks"),
         ["hero.subtitulo"] = (
-            "Escribe o dicta lo que tengas que hacer — el resto lo hace la app.",
-            "Write or dictate what you need to do — the app handles the rest."),
+            "Escribe o dicta tus planes en una frase. No se guarda nada hasta que confirmes lo que la app ha entendido.",
+            "Type or dictate your plans in one sentence. Nothing is saved until you confirm what the app understood."),
 
         ["entrada.placeholder"] = (
             "Ej: dentista el viernes 2 a las 7, y gimnasio mañana a las 18:00",
             "E.g.: dentist Friday the 2nd at 7, and gym tomorrow at 6pm"),
 
+        ["entrada.etiqueta"] = ("¿Qué tienes pendiente?", "What's coming up?"),
+        ["entrada.atajo"] = ("Ctrl + Enter para revisar", "Ctrl + Enter to review"),
+
         ["mic.iniciar"] = ("Dictar por voz", "Dictate by voice"),
         ["mic.detener"] = ("Detener grabación", "Stop recording"),
 
         ["aviso.permisoBloqueado"] = (
-            "🚫 Bloqueaste el acceso al micrófono. Haz clic en el icono junto a la URL de tu navegador para permitirlo y recarga la página.",
-            "🚫 You blocked microphone access. Click the icon next to your browser's address bar to allow it, then reload the page."),
+            "Bloqueaste el acceso al micrófono. Haz clic en el icono junto a la URL de tu navegador para permitirlo y recarga la página.",
+            "You blocked microphone access. Click the icon next to your browser's address bar to allow it, then reload the page."),
 
         ["boton.revisarEventos"] = ("Revisar eventos", "Review events"),
         ["boton.analizando"] = ("Analizando...", "Analyzing..."),
 
         ["aviso.grabando"] = (
-            "🎤 Grabando... habla con normalidad, se detiene sola al dejar de oír voz.",
-            "🎤 Recording... speak normally, it stops automatically once it stops hearing your voice."),
+            "Grabando... habla con normalidad, se detiene sola al dejar de oír voz.",
+            "Recording... speak normally, it stops automatically once it stops hearing your voice."),
         ["aviso.transcribiendo"] = (
-            "⏳ Transcribiendo el audio (puede tardar unos segundos la primera vez)...",
-            "⏳ Transcribing the audio (may take a few seconds the first time)..."),
+            "Transcribiendo el audio (puede tardar unos segundos la primera vez)...",
+            "Transcribing the audio (may take a few seconds the first time)..."),
 
         ["previa.singular"] = ("He entendido este evento", "I understood this event"),
         ["previa.plural"] = ("He entendido estos {0} eventos", "I understood these {0} events"),
-        ["previa.avisoAmbiguo"] = ("⚠ revisa los marcados", "⚠ check the flagged ones"),
+        ["previa.avisoAmbiguo"] = ("Revisa los marcados", "Check the flagged ones"),
         ["campo.titulo"] = ("Título", "Title"),
+        ["campo.fecha"] = ("Fecha", "Date"),
+        ["campo.hora"] = ("Hora", "Time"),
         ["previa.quitarTitle"] = ("Quitar este evento", "Remove this event"),
         ["boton.confirmarCrear"] = ("Confirmar y crear ({0})", "Confirm and create ({0})"),
         ["boton.creando"] = ("Creando...", "Creating..."),
         ["boton.cancelar"] = ("Cancelar", "Cancel"),
+        ["boton.cerrar"] = ("Cerrar", "Close"),
 
         ["google.noConfigurado"] = (
-            "La integración con Google Calendar aún no está configurada. Revisa el README.md del proyecto: hay que crear unas credenciales propias en Google Cloud Console una sola vez (requisito técnico de Google, no de la app).",
-            "Google Calendar integration isn't configured yet. Check the project's README.md: you need to create your own credentials in Google Cloud Console once (a technical requirement from Google, not from the app)."),
+            "Google Calendar no está configurado. Las tareas se guardan aquí igualmente; para enviarlas a tu calendario, sigue «Conectar con Google Calendar» en el README.",
+            "Google Calendar isn't set up. Tasks are still saved here; to send them to your calendar, follow \"Google Calendar setup\" in the README."),
         ["google.noConectado"] = (
             "Conecta tu cuenta de Google para que las tareas se envíen a tu calendario automáticamente.",
             "Connect your Google account so tasks are sent to your calendar automatically."),
         ["boton.conectarGoogle"] = ("Conectar con Google", "Connect with Google"),
         ["boton.conectando"] = ("Conectando...", "Connecting..."),
-        ["google.conectado"] = ("● Conectado a Google Calendar", "● Connected to Google Calendar"),
+        ["google.conectado"] = ("Conectado a Google Calendar", "Connected to Google Calendar"),
         ["boton.importarGoogle"] = ("Importar desde Google", "Import from Google"),
         ["boton.importando"] = ("Importando...", "Importing..."),
         ["boton.desconectar"] = ("Desconectar", "Disconnect"),
 
+        ["semana.navegacion"] = ("Navegación por semanas", "Week navigation"),
+        ["semana.numero"] = ("Semana {0}", "Week {0}"),
         ["semana.anteriorTitle"] = ("Semana anterior", "Previous week"),
         ["semana.siguienteTitle"] = ("Semana siguiente", "Next week"),
-        ["semana.nombrePorDefecto"] = ("Semana", "Week"),
         ["semana.renombrarTitle"] = ("Clic para renombrar esta semana", "Click to rename this week"),
         ["boton.hoy"] = ("Hoy", "Today"),
 
@@ -142,6 +162,7 @@ public class LocalizationService
         ["tarea.actualizarGoogleTitle"] = ("Actualizar en Google Calendar", "Update in Google Calendar"),
         ["tarea.eliminarTitle"] = ("Eliminar", "Delete"),
         ["tarea.confirmarEliminar"] = ("¿Eliminar?", "Delete?"),
+        ["tarea.sinHora"] = ("Sin hora", "No time"),
         ["tarea.sinTitulo"] = ("(Sin título)", "(Untitled)"),
         ["tarea.insigniaGoogleTitle"] = ("Sincronizada con Google Calendar", "Synced with Google Calendar"),
 
@@ -152,13 +173,17 @@ public class LocalizationService
         ["mensaje.sinEventos"] = (
             "No se pudo identificar ningún evento, intenta reformular.",
             "No event could be identified, try rephrasing."),
-        ["mensaje.eventosCreadosConGoogle"] = (
-            "Se crearon {0} evento(s), {1} sincronizado(s) con Google Calendar.",
-            "Created {0} event(s), {1} synced with Google Calendar."),
-        ["mensaje.eventosCreadosSinGoogle"] = ("Se crearon {0} evento(s).", "Created {0} event(s)."),
+        ["mensaje.eventosCreados.uno"] = ("Se creó 1 evento.", "Created 1 event."),
+        ["mensaje.eventosCreados.varios"] = ("Se crearon {0} eventos.", "Created {0} events."),
+        ["mensaje.eventosCreadosConGoogle.uno"] = (
+            "Se creó 1 evento y ya está en Google Calendar.",
+            "Created 1 event; it's already in Google Calendar."),
+        ["mensaje.eventosCreadosConGoogle.varios"] = (
+            "Se crearon {0} eventos y ya están en Google Calendar.",
+            "Created {0} events; they're already in Google Calendar."),
         ["mensaje.eventosSinSincronizar"] = (
-            "No se pudieron enviar a Google: {0}. Están guardados aquí; usa su botón ☁ para reintentarlo.",
-            "Couldn't send to Google: {0}. They're saved here; use their ☁ button to try again."),
+            "No se pudieron enviar a Google: {0}. Están guardados aquí; usa su botón de sincronizar para reintentarlo.",
+            "Couldn't send to Google: {0}. They're saved here; use their sync button to try again."),
         ["mensaje.tareaSincronizada"] = (
             "'{0}' sincronizada con Google Calendar.",
             "'{0}' synced with Google Calendar."),
@@ -176,9 +201,16 @@ public class LocalizationService
         ["mensaje.desconectadoGoogle"] = (
             "Se cerró la sesión de Google en esta app.",
             "Signed out of Google in this app."),
-        ["mensaje.importacionCompleta"] = (
-            "Importación completa: {0} tarea(s) nueva(s), {1} actualizada(s), {2} eliminada(s) porque ya no están en Google.",
-            "Import complete: {0} new task(s), {1} updated, {2} removed because they're no longer in Google."),
+        ["mensaje.importacion"] = ("Importado de Google: {0}.", "Imported from Google: {0}."),
+        ["mensaje.importacionSinCambios"] = (
+            "Esta semana ya coincidía con Google Calendar.",
+            "This week already matched Google Calendar."),
+        ["importacion.nuevas.uno"] = ("1 tarea nueva", "1 new task"),
+        ["importacion.nuevas.varios"] = ("{0} tareas nuevas", "{0} new tasks"),
+        ["importacion.actualizadas.uno"] = ("1 actualizada", "1 updated"),
+        ["importacion.actualizadas.varios"] = ("{0} actualizadas", "{0} updated"),
+        ["importacion.eliminadas.uno"] = ("1 borrada porque ya no está en Google", "1 removed because it's no longer in Google"),
+        ["importacion.eliminadas.varios"] = ("{0} borradas porque ya no están en Google", "{0} removed because they're no longer in Google"),
         ["mensaje.errorImportarGoogle"] = (
             "Error al importar desde Google: {0}",
             "Error importing from Google: {0}"),

@@ -1,0 +1,54 @@
+@using System.Globalization
+@inject LocalizationService L
+
+<section class="dia @(EsHoy ? "hoy" : "") @(EsFinDeSemana ? "finde" : "")" style="--d:@Orden" aria-label="@NombreLargo @Fecha.Day">
+    <header class="dia-cabecera">
+        <span class="dia-numero">@Fecha.Day</span>
+        <span class="dia-nombre">
+            <span class="dia-nombre-largo">@NombreLargo</span>
+            <span class="dia-nombre-corto" aria-hidden="true">@NombreCorto</span>
+        </span>
+        @if (Tareas.Count > 0)
+        {
+            <span class="dia-cuenta">@Tareas.Count(t => t.Completada)/@Tareas.Count</span>
+        }
+    </header>
+
+    @if (Tareas.Count > 0)
+    {
+        <ul class="dia-tareas">
+            @foreach (var (tarea, i) in Tareas.OrderBy(t => t.Hora ?? TimeOnly.MaxValue).Select((t, i) => (t, i)))
+            {
+                <TareaFila @key="tarea.Id" Tarea="tarea" Fecha="Fecha" Indice="@Math.Min(i, 6)" GoogleConectado="GoogleConectado"
+                           OnAlternar="OnAlternar" OnGuardar="OnGuardar" OnEliminar="OnEliminar" OnSincronizar="OnSincronizar" />
+            }
+        </ul>
+    }
+    else
+    {
+        <p class="dia-vacio">@L.T("dia.sinTareas")</p>
+    }
+</section>
+
+@code {
+    [Parameter] public DateOnly Fecha { get; set; }
+    [Parameter] public int Orden { get; set; }
+    [Parameter] public bool EsHoy { get; set; }
+    [Parameter] public List<TareaItem> Tareas { get; set; } = new();
+    [Parameter] public bool GoogleConectado { get; set; }
+    [Parameter] public EventCallback<TareaItem> OnAlternar { get; set; }
+    [Parameter] public EventCallback<EdicionTarea> OnGuardar { get; set; }
+    [Parameter] public EventCallback<TareaItem> OnEliminar { get; set; }
+    [Parameter] public EventCallback<TareaItem> OnSincronizar { get; set; }
+
+    private bool EsFinDeSemana => Fecha.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+    private DateTimeFormatInfo Formato => CultureInfo.GetCultureInfo(L.CodigoCultura).DateTimeFormat;
+
+    private string NombreLargo => Capitalizar(Formato.GetDayName(Fecha.DayOfWeek));
+
+    private string NombreCorto => Capitalizar(Formato.GetAbbreviatedDayName(Fecha.DayOfWeek).TrimEnd('.'));
+
+    private static string Capitalizar(string texto) =>
+        texto.Length == 0 ? texto : char.ToUpper(texto[0], CultureInfo.InvariantCulture) + texto[1..];
+}

@@ -1,0 +1,143 @@
+.compositor {
+    max-width: 46rem;
+    margin-bottom: 2.25rem;
+}
+
+.compositor-etiqueta {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.compositor-caja {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Línea de foco: se dibuja de izquierda a derecha con transform, sin animar el borde. */
+.compositor-caja::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--color-accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--t-lento) var(--ease-salida);
+}
+
+.compositor-caja:focus-within::after {
+    transform: scaleX(1);
+}
+
+.grabando .compositor-caja::after {
+    background: var(--color-primary);
+    transform: scaleX(1);
+}
+
+.compositor-texto {
+    flex: 1;
+    min-height: 3.5rem;
+    padding: 0.25rem 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.compositor-texto:focus {
+    outline: none;
+}
+
+/* --- Micrófono --- */
+
+.btn-mic {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.9rem;
+    height: 2.9rem;
+    margin-bottom: 0.2rem;
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    background: var(--color-surface);
+    color: var(--color-text);
+    flex-shrink: 0;
+    transition: background-color var(--t-rapido) var(--ease-suave),
+                border-color var(--t-rapido) var(--ease-suave),
+                transform var(--t-rapido) var(--ease-suave);
+}
+
+.btn-mic:hover:not(:disabled) {
+    border-color: var(--color-accent);
+}
+
+.btn-mic:active:not(:disabled) {
+    transform: scale(0.94);
+}
+
+/* Al grabar, un anillo se expande y se desvanece (transform + opacity, sin animar sombras). */
+.btn-mic::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 50%;
+    border: 2px solid var(--color-primary);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.grabando .btn-mic {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.grabando .btn-mic::before {
+    animation: onda-mic 1.3s var(--ease-salida) infinite;
+}
+
+@keyframes onda-mic {
+    from { opacity: 0.7; transform: scale(1); }
+    to { opacity: 0; transform: scale(1.55); }
+}
+
+.transcribiendo .btn-mic {
+    color: var(--color-accent);
+}
+
+/* --- Pie --- */
+
+.compositor-pie {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.compositor-atajo {
+    color: var(--color-text-tenue);
+    font-size: 0.78rem;
+}
+
+@media (hover: none), (max-width: 640px) {
+    .compositor-atajo {
+        display: none;
+    }
+
+    .compositor-pie ::deep .btn,
+    .compositor-pie .btn {
+        flex: 1;
+    }
+}

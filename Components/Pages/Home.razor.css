@@ -1,0 +1,71 @@
+/* --- Portada ------------------------------------------------------------- */
+
+.portada {
+    margin-bottom: 2rem;
+}
+
+.portada-titulo {
+    font-size: clamp(2.1rem, 1.4rem + 3vw, 3.6rem);
+    font-weight: 850;
+    font-stretch: 82%;
+    line-height: 0.98;
+    letter-spacing: -0.025em;
+}
+
+.portada-titulo em {
+    font-style: normal;
+    font-weight: 300;
+    font-stretch: 100%;
+    color: var(--color-accent);
+}
+
+.portada-sub {
+    max-width: 30rem;
+    margin-top: 0.85rem;
+    color: var(--color-text-muted);
+    font-size: 1rem;
+}
+
+/* --- Línea de estado ----------------------------------------------------- */
+
+.estado {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 46rem;
+    margin: -0.75rem 0 1.75rem;
+    padding: 0.55rem 0.5rem 0.55rem 0.9rem;
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    font-size: 0.88rem;
+    animation: entrar var(--t-medio) var(--ease-salida) both;
+}
+
+.estado-texto {
+    flex: 1;
+}
+
+/* --- Semana -------------------------------------------------------------- */
+
+/* El sentido del cambio de semana llega a cada columna como variable heredada. */
+.semana {
+    --desde: 0px;
+    display: grid;
+    grid-template-columns: 1fr;
+    border-top: 1px solid var(--color-border);
+}
+
+.semana[data-sentido="adelante"] {
+    --desde: 18px;
+}
+
+.semana[data-sentido="atras"] {
+    --desde: -18px;
+}
+
+@media (min-width: 1024px) {
+    .semana {
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        border-bottom: 1px solid var(--color-linea);
+    }
+}

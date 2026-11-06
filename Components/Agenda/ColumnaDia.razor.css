@@ -1,0 +1,164 @@
+/* Móvil y tableta: agenda en filas (número a la izquierda, tareas a la derecha).
+   Escritorio: siete columnas como una hoja de planificador. */
+
+.dia {
+    position: relative;
+    display: grid;
+    grid-template-columns: 4.25rem 1fr;
+    column-gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--color-linea);
+    background: var(--color-bg);
+    animation: columna-entra var(--t-lento) var(--ease-salida) both;
+    animation-delay: calc(var(--d, 0) * 28ms);
+}
+
+@keyframes columna-entra {
+    from { opacity: 0; transform: translateX(var(--desde, 0px)); }
+    to { opacity: 1; transform: none; }
+}
+
+.dia.finde {
+    background: #10161a;
+}
+
+/* Hoy: una pestaña roja en el borde, como el marcador de una agenda de papel. */
+.dia.hoy::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -1px;
+    width: 3px;
+    height: calc(100% + 1px);
+    background: var(--color-primary);
+    transform-origin: top;
+    animation: marcador 480ms var(--ease-salida) 120ms both;
+}
+
+@keyframes marcador {
+    from { transform: scaleY(0); }
+    to { transform: none; }
+}
+
+.dia-cabecera {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    padding-left: 0.85rem;
+}
+
+.dia-numero {
+    font-size: 2.1rem;
+    font-weight: 250;
+    font-stretch: 80%;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+}
+
+.dia.hoy .dia-numero {
+    color: var(--color-primary-hover);
+    font-weight: 600;
+}
+
+.dia-nombre {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.dia-nombre-largo {
+    display: none;
+}
+
+.dia-cuenta {
+    margin-top: 0.25rem;
+    color: var(--color-text-tenue);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.dia-tareas {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.dia-vacio {
+    align-self: center;
+    color: var(--color-text-tenue);
+    font-size: 0.85rem;
+}
+
+@media (min-width: 1024px) {
+    .dia {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+        row-gap: 0.85rem;
+        min-height: 15rem;
+        padding: 0.9rem 0.6rem 1.1rem;
+        border-bottom: 0;
+    }
+
+    /* Separadores entre columnas como borde propio: durante la transición no queda a la vista
+       ningún fondo de relleno detrás de las columnas que aún están entrando. */
+    .dia + .dia {
+        border-left: 1px solid var(--color-linea);
+    }
+
+    .dia.hoy::before {
+        top: 0;
+        left: -1px;
+        width: calc(100% + 2px);
+        height: 3px;
+        transform-origin: left;
+        animation-name: marcador-h;
+    }
+
+    @keyframes marcador-h {
+        from { transform: scaleX(0); }
+        to { transform: none; }
+    }
+
+    .dia-cabecera {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 0.5rem;
+        padding: 0 0.35rem 0.6rem;
+        border-bottom: 1px solid var(--color-linea);
+    }
+
+    .dia-numero {
+        font-size: 1.9rem;
+    }
+
+    .dia-cuenta {
+        margin: 0 0 0 auto;
+    }
+
+    /* En la rejilla de escritorio un día vacío se queda en blanco, como en papel: repetir
+       "Sin tareas" en cinco columnas solo añade ruido. Se sigue anunciando a lectores de pantalla. */
+    .dia-vacio {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+}
+
+@media (min-width: 640px) and (max-width: 1023.98px) {
+    .dia-nombre-largo {
+        display: inline;
+    }
+
+    .dia-nombre-corto {
+        display: none;
+    }
+}

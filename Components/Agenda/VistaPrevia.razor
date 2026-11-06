@@ -1,0 +1,81 @@
+@inject LocalizationService L
+
+<section class="previa" aria-live="polite">
+    <header class="previa-cabecera">
+        <h2 class="previa-titulo">
+            @(Eventos.Count == 1 ? L.T("previa.singular") : L.T("previa.plural", Eventos.Count))
+        </h2>
+        @if (Eventos.Any(e => e.EsAmbiguo || e.AvisoHora is not null))
+        {
+            <span class="previa-marca"><Icono Nombre="aviso" Tamano="14" /> @L.T("previa.avisoAmbiguo")</span>
+        }
+    </header>
+
+    <ol class="previa-lista">
+        @foreach (var (ev, i) in Eventos.Select((ev, i) => (ev, i)))
+        {
+            <li @key="ev.Id" class="previa-fila @(ev.EsAmbiguo || ev.AvisoHora is not null ? "dudosa" : "")" style="--i:@Math.Min(i, 8)">
+                <span class="previa-num">@((i + 1).ToString("00"))</span>
+                <div class="previa-campos">
+                    <input class="campo campo-sm previa-titulo-campo" @bind="ev.Texto" placeholder="@L.T("campo.titulo")" aria-label="@L.T("campo.titulo")" />
+                    <input type="date" class="campo campo-sm" aria-label="@L.T("campo.fecha")"
+                           value="@ev.Fecha.ToString("yyyy-MM-dd")"
+                           @onchange="e => CambiarFecha(ev, e)" />
+                    <input type="time" class="campo campo-sm" aria-label="@L.T("campo.hora")" @bind="ev.Hora" @bind:after="() => ev.AvisoHora = null" />
+                    <label class="campo-duracion" title="@L.T("edicion.duracionTitle")">
+                        <input type="number" min="0" class="campo campo-sm" aria-label="@L.T("edicion.duracionTitle")"
+                               value="@(ev.Duracion is { } d ? ((int)d.TotalMinutes).ToString() : "")" placeholder="–"
+                               @onchange="e => ev.Duracion = int.TryParse((string?)e.Value, out var min) && min > 0 ? TimeSpan.FromMinutes(min) : null" />
+                        <span>min</span>
+                    </label>
+                    @if (ev.EsAmbiguo)
+                    {
+                        <p class="previa-duda"><Icono Nombre="aviso" Tamano="14" /> @ev.MotivoAmbiguedad</p>
+                    }
+                    @if (ev.AvisoHora is not null)
+                    {
+                        <p class="previa-duda"><Icono Nombre="aviso" Tamano="14" /> @ev.AvisoHora</p>
+                    }
+                </div>
+                <button class="btn-icono btn-icono-peligro" type="button" title="@L.T("previa.quitarTitle")" aria-label="@L.T("previa.quitarTitle")"
+                        @onclick="() => OnQuitar.InvokeAsync(ev)">
+                    <Icono Nombre="cerrar" Tamano="16" />
+                </button>
+            </li>
+        }
+    </ol>
+
+    <div class="acciones">
+        <button class="btn btn-primario" type="button" @onclick="OnConfirmar" disabled="@Confirmando">
+            @if (Confirmando)
+            {
+                <Icono Nombre="cargando" Tamano="16" />
+                <span>@L.T("boton.creando")</span>
+            }
+            else
+            {
+                <Icono Nombre="check" Tamano="16" />
+                <span>@L.T("boton.confirmarCrear", Eventos.Count)</span>
+            }
+        </button>
+        <button class="btn btn-texto" type="button" @onclick="OnCancelar">@L.T("boton.cancelar")</button>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public List<EventoPropuesto> Eventos { get; set; } = new();
+    [Parameter] public bool Confirmando { get; set; }
+    [Parameter] public EventCallback OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+    [Parameter] public EventCallback<EventoPropuesto> OnQuitar { get; set; }
+
+    private static void CambiarFecha(EventoPropuesto ev, ChangeEventArgs e)
+    {
+        if (DateOnly.TryParseExact((string?)e.Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fecha))
+        {
+            ev.Fecha = fecha;
+            ev.EsAmbiguo = false;
+            ev.MotivoAmbiguedad = null;
+        }
+    }
+}
