@@ -83,7 +83,7 @@ services, no data leaving your own network).
 |---|---|
 | UI / server | C# 13, .NET 9, Blazor Server (interactive server render mode) |
 | Calendar integration | Google Calendar API v3, OAuth2 (`Google.Apis.*`) |
-| Speech-to-text | [Whisper.net](https://github.com/sandrohanea/whisper.net) (local Whisper inference, "small" model) |
+| Speech-to-text | [Whisper.net](https://github.com/sandrohanea/whisper.net) (local Whisper inference, "large-v3-turbo" model quantized to Q5_0) |
 | Voice activity detection | [Silero VAD](https://github.com/snakers4/silero-vad) via `Microsoft.ML.OnnxRuntime` |
 | Audio capture | Web Audio API (`AudioContext`, `getUserMedia`), custom WAV encoding in JS |
 | Natural language parsing | Custom regex-driven engine (no external AI/LLM), one rule set per language |
@@ -131,6 +131,25 @@ To run the tests (natural-language parser and storage):
 ```bash
 dotnet test SmartAgenda.sln
 ```
+
+### Voice model
+
+Voice dictation uses Whisper **large-v3-turbo** quantized to Q5_0 (~574 MB),
+downloaded in the background the first time the app starts. It is much more
+accurate than the previous "small" model, especially with times and dates.
+On slower machines you can switch to a lighter setup in `appsettings.json`:
+
+```json
+"Voz": {
+  "Modelo": "Small",          // or "LargeV3Turbo" (default)
+  "Cuantizacion": "Q5_0",     // "Q5_0" (default), "Q8_0" or "NoQuantization"
+  "Decodificacion": "Greedy", // "BeamSearch" (default, more accurate) or "Greedy" (faster)
+  "Hilos": 0                  // CPU threads, 0 = automatic
+}
+```
+
+When the model changes, the new one is downloaded once and the old one is
+deleted to free up space.
 
 ### Natural language examples
 
@@ -378,8 +397,11 @@ event in your Google Calendar, no extra technical steps.
   without real speech (music, noise, silence) using Silero VAD, before
   calling Whisper.
 - `Services/TranscripcionAudioService.cs` — transcribes recorded audio to
-  text with Whisper, running locally (downloads the models on first run
-  into `Data/modelo-voz/`).
+  text with Whisper, running locally (downloads the model in the background
+  on first run into `Data/modelo-voz/` and checks its SHA-256 hash).
+- `Services/ModeloVoz.cs` — voice model settings (`Voz` section of
+  `appsettings.json`), model catalog with sizes and hashes, and the
+  calendar vocabulary given to Whisper as context.
 - `wwwroot/js/speech.js` — records audio in the browser (standard APIs,
   supported everywhere) and uploads it to `/api/transcribir`; the resulting
   text goes through the same flow as if it had been typed. Also detects

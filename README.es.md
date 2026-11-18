@@ -88,7 +88,7 @@ que ningún dato salga de tu propia red).
 |---|---|
 | Interfaz / servidor | C# 13, .NET 9, Blazor Server (modo de renderizado interactivo en servidor) |
 | Integración con calendario | Google Calendar API v3, OAuth2 (`Google.Apis.*`) |
-| Voz a texto | [Whisper.net](https://github.com/sandrohanea/whisper.net) (inferencia local de Whisper, modelo "small") |
+| Voz a texto | [Whisper.net](https://github.com/sandrohanea/whisper.net) (inferencia local de Whisper, modelo "large-v3-turbo" cuantizado en Q5_0) |
 | Detección de actividad de voz | [Silero VAD](https://github.com/snakers4/silero-vad) vía `Microsoft.ML.OnnxRuntime` |
 | Captura de audio | Web Audio API (`AudioContext`, `getUserMedia`), codificación WAV propia en JS |
 | Interpretación de lenguaje natural | Motor propio basado en expresiones regulares (sin IA/LLM externo), un conjunto de reglas por idioma |
@@ -136,6 +136,26 @@ Para pasar los tests (parser de lenguaje natural y almacenamiento):
 ```bash
 dotnet test SmartAgenda.sln
 ```
+
+### Modelo de voz
+
+El dictado usa Whisper **large-v3-turbo** cuantizado en Q5_0 (~574 MB), que se
+descarga en segundo plano la primera vez que arranca la app. Es mucho más
+preciso que el modelo "small" anterior, sobre todo con horas y fechas. En
+equipos más lentos puedes elegir una configuración más ligera en
+`appsettings.json`:
+
+```json
+"Voz": {
+  "Modelo": "Small",          // o "LargeV3Turbo" (por defecto)
+  "Cuantizacion": "Q5_0",     // "Q5_0" (por defecto), "Q8_0" o "NoQuantization"
+  "Decodificacion": "Greedy", // "BeamSearch" (por defecto, más preciso) o "Greedy" (más rápido)
+  "Hilos": 0                  // hilos de CPU, 0 = automático
+}
+```
+
+Al cambiar de modelo, el nuevo se descarga una vez y el anterior se borra
+para liberar espacio.
 
 ### Ejemplos de lenguaje natural
 
@@ -396,8 +416,11 @@ crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
   voz real (música, ruido, silencio) con Silero VAD, antes de llamar a
   Whisper.
 - `Services/TranscripcionAudioService.cs` — transcribe el audio grabado a
-  texto con Whisper, ejecutado localmente (descarga los modelos la primera
-  vez a `Data/modelo-voz/`).
+  texto con Whisper, ejecutado localmente (descarga el modelo en segundo
+  plano la primera vez a `Data/modelo-voz/` y comprueba su huella SHA-256).
+- `Services/ModeloVoz.cs` — configuración del modelo de voz (sección `Voz`
+  de `appsettings.json`), catálogo de modelos con tamaños y huellas, y el
+  vocabulario de agenda que se le da a Whisper como contexto.
 - `wwwroot/js/speech.js` — graba audio en el navegador (APIs estándar,
   soportadas en cualquier navegador) y lo sube a `/api/transcribir`; el
   texto resultante entra por el mismo flujo que si se hubiera escrito a
