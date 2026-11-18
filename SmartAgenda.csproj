@@ -8,10 +8,10 @@
 
   <!-- La librería compartida y los tests tienen su propio .csproj: que no se compilen también aquí. -->
   <ItemGroup>
-    <Compile Remove="tests\**;SmartAgenda.Core\**" />
-    <Content Remove="tests\**;SmartAgenda.Core\**" />
-    <None Remove="tests\**;SmartAgenda.Core\**" />
-    <EmbeddedResource Remove="tests\**;SmartAgenda.Core\**" />
+    <Compile Remove="tests\**;SmartAgenda.Core\**;SmartAgenda.Movil\**" />
+    <Content Remove="tests\**;SmartAgenda.Core\**;SmartAgenda.Movil\**" />
+    <None Remove="tests\**;SmartAgenda.Core\**;SmartAgenda.Movil\**" />
+    <EmbeddedResource Remove="tests\**;SmartAgenda.Core\**;SmartAgenda.Movil\**" />
   </ItemGroup>
 
   <!-- Componentes, servicios y modelos compartidos con la app Android. -->

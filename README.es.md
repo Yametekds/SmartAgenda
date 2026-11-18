@@ -202,6 +202,49 @@ envía a Google Calendar hasta pulsar **"Confirmar y crear"**.
 Cada tarea se guarda en un archivo independiente por fecha dentro de
 `Data/tareas/`, así que cada semana —pasada o futura— es independiente.
 
+## App Android
+
+`SmartAgenda.Movil/` es una app Android hecha con .NET MAUI Blazor Hybrid.
+Usa los mismos componentes y servicios que la versión web, pero funciona
+entera en el móvil: sin servidor, sin Tailscale y sin contraseña. Funciona sin
+conexión y se sincroniza con tus otros dispositivos a través de Google
+Calendar.
+
+**Instalarla**
+
+1. Abre la última ejecución del workflow **CI** en la pestaña *Actions* del
+   repositorio y descarga el artefacto `SmartAgenda-android`.
+2. Descomprímelo, pasa el `.apk` al móvil y ábrelo (Android te pedirá permitir
+   instalar apps desde ese origen).
+
+**Conectar Google Calendar en el móvil**
+
+1. En tu credencial de Google Cloud (la misma que usas en el PC), añade
+   `http://localhost:53682/` como URI de redirección autorizada. Si lo
+   prefieres, crea una credencial de tipo "App de escritorio", que no necesita
+   ninguna URI.
+2. Pasa su `credentials.json` al móvil, pulsa **Elegir credentials.json** en la
+   app y después **Conectar con Google**. Se abre el navegador del móvil; tras
+   dar permiso, vuelve a la app y sincronizará tu calendario.
+
+**Voz**: el modelo (~574 MB) se descarga solo con Wi-Fi la primera vez que se
+abre la app (o la primera vez que dictes, si estás con datos móviles). La
+transcripción se hace en el propio móvil.
+
+**Actualizar sin perder datos**: Android solo instala una versión nueva encima
+de la anterior si las dos están firmadas con la misma clave. Para que el CI
+firme siempre con la tuya, crea una clave una vez:
+
+```bash
+keytool -genkeypair -v -keystore smartagenda.keystore -alias smartagenda -keyalg RSA -keysize 2048 -validity 10000
+```
+
+y añade estos secretos al repositorio (*Settings → Secrets and variables →
+Actions*): `ANDROID_KEYSTORE_BASE64` (el archivo en base64, por ejemplo
+`base64 -w0 smartagenda.keystore`), `ANDROID_KEY_ALIAS` (`smartagenda`),
+`ANDROID_KEYSTORE_PASSWORD` y `ANDROID_KEY_PASSWORD`. Guarda el archivo de la
+clave en un sitio seguro y fuera del repositorio.
+
 ## Acceso remoto y móvil
 
 La app siempre corre en una sola máquina; tu móvil (o cualquier otro
@@ -378,19 +421,27 @@ A partir de ahí, el uso diario es: escribes o dictas la tarea → pulsas
 "Revisar eventos" → confirmas la vista previa → se guarda en la app y se
 crea el evento en tu Google Calendar, sin pasos técnicos adicionales.
 
-### Editar, eliminar e importar
+### Editar, eliminar y sincronizar
 
 - **Editar**: cada tarea tiene un botón "Editar" para cambiar el texto, el
-  día, la hora o la duración. Si está conectada a Google, el evento se
-  actualiza también.
-- **Eliminar**: pide confirmación y borra la tarea localmente y, si estaba
+  día, la hora o la duración.
+- **Eliminar**: pide confirmación y borra la tarea aquí y, si estaba
   sincronizada, también el evento en Google Calendar.
-- **Importar tareas desde Google**: trae a la app los eventos que ya tengas
-  en tu Google Calendar para la semana actual (por ejemplo, si los creaste
-  directamente desde el móvil o la web de Google). Los eventos ya conocidos
-  se actualizan (y se mueven si cambiaron de día), los nuevos se añaden
-  como tareas y las tareas cuyo evento se borró en Google se borran también
-  aquí.
+- **Sincronización automática**: cada dispositivo guarda su propia copia de
+  las tareas y funciona sin conexión. Google Calendar es la copia
+  compartida: la app sincroniza al abrirse, unos segundos después de cada
+  cambio, cada 5 minutos y con el botón "Sincronizar ahora". Lo que hagas
+  sin conexión se envía en cuanto la haya.
+  - Sincroniza en los dos sentidos: eventos nuevos, ediciones, cambios de
+    día, tareas completadas y borrados, incluidos los eventos creados
+    directamente en Google Calendar (de 60 días atrás a un año vista).
+  - Cada tarea lleva un identificador fijo (guardado de forma privada en su
+    evento de Google), así todos los dispositivos la reconocen aunque cambie
+    de título.
+  - Si la misma tarea cambia en dos dispositivos antes de sincronizar, gana
+    el cambio más reciente.
+  - Lo que añadas al evento desde el propio Google Calendar (descripción,
+    invitados, avisos) se conserva cuando la app lo actualiza.
 
 > Los archivos `Data/credentials.json` y `Data/google-token/` contienen
 > información sensible de tu cuenta: no los compartas ni los subas a un
@@ -410,8 +461,12 @@ El código se divide en dos proyectos: `SmartAgenda.Core/` contiene todo lo que 
   interfaz (ES/EN) y único punto de verdad sobre el idioma seleccionado.
 - `SmartAgenda.Core/Services/TareaStorageService.cs` — guarda/lee las tareas en JSON, un
   archivo por fecha exacta, y el nombre personalizado de cada semana.
-- `SmartAgenda.Core/Services/GoogleCalendarService.cs` — autenticación OAuth (redirección
-  del navegador a `/google/callback`) y sincronización con Google Calendar.
+- `SmartAgenda.Core/Services/GoogleCalendarService.cs` — autenticación OAuth2
+  (redirección del navegador a `/google/callback`) y lectura/escritura de
+  eventos en Google Calendar.
+- `SmartAgenda.Core/Services/Sincronizacion/` — sincronización en los dos
+  sentidos entre este dispositivo y Google Calendar (cola sin conexión,
+  borrados, gana el cambio más reciente).
 - `Services/AccesoService.cs` — contraseña de acceso para otros
   dispositivos y su página de entrada (`/acceso`).
 - `SmartAgenda.Core/Services/DeteccionVozService.cs` — filtro previo que descarta audio sin

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="456" height="456">
+  <!-- Hoja de agenda con dos anillas; dentro, una onda de voz cuya barra central (roja) marca "hoy". -->
+  <g fill="none" stroke-linecap="round" stroke-width="3">
+    <rect x="9" y="11.5" width="30" height="27.5" rx="5.5" stroke="#c3bc9e"/>
+    <path d="M17 7.5v7M31 7.5v7" stroke="#c3bc9e"/>
+    <path d="M15.5 25.25v3.5M20 22.5v9M28 22.5v9M32.5 25.25v3.5" stroke="#f2f2f0"/>
+    <path d="M24 19.5v15" stroke="#e40712"/>
+  </g>
+</svg>

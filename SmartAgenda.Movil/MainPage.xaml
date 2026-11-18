@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:SmartAgenda.Movil"
+             xmlns:componentes="clr-namespace:SmartAgenda.Movil.Components"
+             x:Class="SmartAgenda.Movil.MainPage"
+             BackgroundColor="{StaticResource Fondo}">
+
+    <BlazorWebView x:Name="blazorWebView" HostPage="wwwroot/index.html" BackgroundColor="{StaticResource Fondo}"
+                   BlazorWebViewInitialized="AlInicializarWebView">
+        <BlazorWebView.RootComponents>
+            <RootComponent Selector="#app" ComponentType="{x:Type componentes:Routes}" />
+        </BlazorWebView.RootComponents>
+    </BlazorWebView>
+
+</ContentPage>
