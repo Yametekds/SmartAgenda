@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
@@ -25,9 +26,9 @@ public class DeteccionVozService
     private readonly ILogger<DeteccionVozService> _logger;
     private InferenceSession? _sesion;
 
-    public DeteccionVozService(IWebHostEnvironment env, ILogger<DeteccionVozService> logger)
+    public DeteccionVozService(IRutasApp rutas, ILogger<DeteccionVozService> logger)
     {
-        var dir = Path.Combine(env.ContentRootPath, "Data", "modelo-voz");
+        var dir = Path.Combine(rutas.CarpetaDatos, "modelo-voz");
         Directory.CreateDirectory(dir);
         _modeloPath = Path.Combine(dir, "silero-vad.onnx");
         _logger = logger;

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using SmartAgenda.Models;
 
 namespace SmartAgenda.Services;
@@ -19,8 +20,8 @@ public class TareaStorageService
     private readonly ILogger<TareaStorageService>? _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    public TareaStorageService(IWebHostEnvironment env, ILogger<TareaStorageService> logger)
-        : this(Path.Combine(env.ContentRootPath, "Data"), logger)
+    public TareaStorageService(IRutasApp rutas, ILogger<TareaStorageService> logger)
+        : this(rutas.CarpetaDatos, logger)
     {
     }
 
